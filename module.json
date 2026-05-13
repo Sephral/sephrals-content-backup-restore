@@ -1,0 +1,44 @@
+{
+  "id": "sephrals-content-backup-restore",
+  "title": "Sephral’s Content Backup & Restore",
+  "description": "Create, restore, delete, and recover backups for scenes, actors, items, journals, playlists, macros, combats, roll tables, and cards.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": 13,
+    "verified": "14.361"
+  },
+  "authors": [
+    {
+      "name": "Sephral"
+    }
+  ],
+  "esmodules": [
+    "scripts/scbr.js"
+  ],
+  "styles": [
+    "styles/scbr.css"
+  ],
+  "languages": [
+    {
+      "lang": "en",
+      "name": "English",
+      "path": "lang/en.json"
+    },
+    {
+      "lang": "de",
+      "name": "Deutsch",
+      "path": "lang/de.json"
+    },
+    {
+      "lang": "fr",
+      "name": "Francais",
+      "path": "lang/fr.json"
+    },
+    {
+      "lang": "es",
+      "name": "Espanol",
+      "path": "lang/es.json"
+    }
+  ],
+  "url": "https://github.com/Sephral/sephrals-content-backup-restore.git"
+}

@@ -1,0 +1,14 @@
+{
+  "name": "sephrals-content-backup-restore",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check scripts/scbr.js",
+    "check:manifest": "node build/validate-manifest.mjs",
+    "release:prepare": "node build/prepare-release.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

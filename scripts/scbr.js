@@ -1,0 +1,1597 @@
+const MODULE_ID = "sephrals-content-backup-restore";
+const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
+const STORE_SETTING = "backupStore";
+const UI_LANGUAGE_SETTING = "uiLanguage";
+const UI_THEME_SETTING = "uiTheme";
+const LEGACY_FLAG = "documentBackups";
+const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
+const BACKUP_STORAGE_VERSION = 4;
+
+const MODULE_TRANSLATIONS = {
+  en: {
+    "scbr.context.label": "Sephral’s Content Backup & Restore",
+    "scbr.action.backup": "Create Backup",
+    "scbr.action.remove": "Delete Backup",
+    "scbr.action.cancel": "Cancel",
+    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
+    "scbr.dialog.summary.latest": "Latest backup: {latest}.",
+    "scbr.dialog.summary.noneShort": "Create the first backup for this document.",
+    "scbr.dialog.create.title": "Create Backup",
+    "scbr.dialog.create.summary": "Create a new backup for {documentName}.",
+    "scbr.dialog.create.nameLabel": "Backup name",
+    "scbr.dialog.create.hint": "The current date and time are stored automatically.",
+    "scbr.dialog.create.submit": "Create Backup",
+    "scbr.dialog.deleteConfirm.title": "Delete Backup",
+    "scbr.dialog.deleteConfirm.body": "Delete backup '{backupName}' from '{documentName}'?",
+    "scbr.dialog.deleteConfirm.confirm": "Delete",
+    "scbr.manager.empty": "No document backups are available yet.",
+    "scbr.manager.selectionLabel": "Saved backups",
+    "scbr.manager.hint": "Choose a backup to restore it or delete it.",
+    "scbr.manager.sortHint": "Newest first, actions on the right.",
+    "scbr.manager.countLabel": "Backups",
+    "scbr.manager.emptyTitle": "No backups yet",
+    "scbr.manager.available": "Available",
+    "scbr.manager.restore": "Restore Backup",
+    "scbr.manager.reconstruct": "Reconstruct Document",
+    "scbr.manager.missing": "[deleted]",
+    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
+    "scbr.settings.tool.label": "Open SCBR",
+    "scbr.settings.tool.hint": "Open the unified backup dialog for all supported world documents.",
+    "scbr.settings.preferences.name": "Interface Settings",
+    "scbr.settings.preferences.label": "Open Interface Settings",
+    "scbr.settings.preferences.hint": "Choose the language and design for this module UI.",
+    "scbr.settings.preferences.title": "Interface Settings",
+    "scbr.settings.preferences.summary": "Adjust how Sephral’s Content Backup & Restore looks and which module language it uses.",
+    "scbr.settings.preferences.section": "Display options",
+    "scbr.settings.preferences.sectionHint": "These preferences are stored per user and apply to the module UI.",
+    "scbr.settings.language.label": "Language",
+    "scbr.settings.language.hint": "Use the Foundry language or force this module to one of the supported module languages.",
+    "scbr.settings.language.default": "Follow Foundry",
+    "scbr.settings.language.en": "English",
+    "scbr.settings.language.de": "Deutsch",
+    "scbr.settings.language.fr": "Francais",
+    "scbr.settings.language.es": "Espanol",
+    "scbr.settings.theme.label": "Design",
+    "scbr.settings.theme.hint": "Switch between the current signature look and a Foundry-style default layout.",
+    "scbr.settings.theme.signature": "Signature",
+    "scbr.settings.theme.foundry": "Foundry Default",
+    "scbr.settings.save": "Save Settings",
+    "scbr.settings.saved": "Interface settings updated.",
+    "scbr.filter.document.label": "Document",
+    "scbr.filter.document.all": "All {documentType}",
+    "scbr.recovery.type.label": "Document type",
+    "scbr.recovery.list.label": "{documentType} backups",
+    "scbr.recovery.list.hintType": "All backups for {documentType}.",
+    "scbr.recovery.list.hintDocument": "Deleted document backups for {documentName}.",
+    "scbr.recovery.list.empty": "No backups exist for {documentType}.",
+    "scbr.recovery.list.emptyDocument": "No backups exist for {documentName}.",
+    "scbr.backup.unnamed": "Unnamed Backup",
+    "scbr.backup.noDate": "No timestamp",
+    "scbr.document.unknown": "Document",
+    "scbr.notification.backupCreated": "Backup '{backupName}' created for '{documentName}'.",
+    "scbr.notification.backupRestored": "Backup '{backupName}' restored for '{documentName}'.",
+    "scbr.notification.backupRemoved": "Backup '{backupName}' removed for '{documentName}'.",
+    "scbr.notification.reconstructed": "Reconstructed '{documentName}' from backup '{backupName}'.",
+    "scbr.notification.noBackup": "No backup exists for '{documentName}'.",
+    "scbr.notification.invalidBackup": "The stored backup for '{documentName}' is invalid.",
+    "scbr.notification.documentMissing": "The selected document could not be found.",
+    "scbr.notification.selectDocument": "Select a live document before creating a backup.",
+    "scbr.notification.unsupportedRecovery": "Recovery is not supported for '{documentType}'.",
+    "scbr.notification.error": "Sephral’s Content Backup & Restore failed: {message}"
+  },
+  de: {
+    "scbr.context.label": "Sephral’s Content Backup & Restore",
+    "scbr.action.backup": "Backup erstellen",
+    "scbr.action.remove": "Backup loeschen",
+    "scbr.action.cancel": "Abbrechen",
+    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
+    "scbr.dialog.summary.latest": "Neuestes Backup: {latest}.",
+    "scbr.dialog.summary.noneShort": "Erstelle das erste Backup fuer dieses Dokument.",
+    "scbr.dialog.create.title": "Backup erstellen",
+    "scbr.dialog.create.summary": "Erstelle ein neues Backup fuer {documentName}.",
+    "scbr.dialog.create.nameLabel": "Backup-Name",
+    "scbr.dialog.create.hint": "Datum und Uhrzeit werden automatisch gespeichert.",
+    "scbr.dialog.create.submit": "Backup erstellen",
+    "scbr.dialog.deleteConfirm.title": "Backup loeschen",
+    "scbr.dialog.deleteConfirm.body": "Backup '{backupName}' aus '{documentName}' loeschen?",
+    "scbr.dialog.deleteConfirm.confirm": "Loeschen",
+    "scbr.manager.empty": "Es sind noch keine Element-Backups vorhanden.",
+    "scbr.manager.selectionLabel": "Gespeicherte Backups",
+    "scbr.manager.hint": "Waehle ein Backup zum Wiederherstellen oder Loeschen.",
+    "scbr.manager.sortHint": "Neueste zuerst, Aktionen rechts.",
+    "scbr.manager.countLabel": "Backups",
+    "scbr.manager.emptyTitle": "Noch keine Backups",
+    "scbr.manager.available": "Vorhanden",
+    "scbr.manager.restore": "Backup wiederherstellen",
+    "scbr.manager.reconstruct": "Element rekonstruieren",
+    "scbr.manager.missing": "[geloescht]",
+    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
+    "scbr.settings.tool.label": "Open SCBR",
+    "scbr.settings.tool.hint": "Den gemeinsamen Backup-Dialog fuer alle unterstuetzten Weltdokumente oeffnen.",
+    "scbr.settings.preferences.name": "Oberflaechen-Einstellungen",
+    "scbr.settings.preferences.label": "Oberflaechen-Einstellungen oeffnen",
+    "scbr.settings.preferences.hint": "Sprache und Design fuer die Moduloberflaeche auswaehlen.",
+    "scbr.settings.preferences.title": "Oberflaechen-Einstellungen",
+    "scbr.settings.preferences.summary": "Lege fest, wie Sephral’s Content Backup & Restore aussieht und welche Modulsprache verwendet wird.",
+    "scbr.settings.preferences.section": "Anzeigeoptionen",
+    "scbr.settings.preferences.sectionHint": "Diese Einstellungen werden pro Benutzer gespeichert und gelten fuer die Moduloberflaeche.",
+    "scbr.settings.language.label": "Sprache",
+    "scbr.settings.language.hint": "Verwende die Foundry-Sprache oder erzwinge fuer dieses Modul eine der verfuegbaren Modulsprache.",
+    "scbr.settings.language.default": "Foundry folgen",
+    "scbr.settings.language.en": "English",
+    "scbr.settings.language.de": "Deutsch",
+    "scbr.settings.language.fr": "Francais",
+    "scbr.settings.language.es": "Espanol",
+    "scbr.settings.theme.label": "Design",
+    "scbr.settings.theme.hint": "Zwischen dem aktuellen Signatur-Look und einem Foundry-nahen Standardlayout wechseln.",
+    "scbr.settings.theme.signature": "Signatur",
+    "scbr.settings.theme.foundry": "Foundry-Standard",
+    "scbr.settings.save": "Einstellungen speichern",
+    "scbr.settings.saved": "Oberflaechen-Einstellungen aktualisiert.",
+    "scbr.filter.document.label": "Dokument",
+    "scbr.filter.document.all": "Alle {documentType}",
+    "scbr.recovery.type.label": "Dokumenttyp",
+    "scbr.recovery.list.label": "{documentType}-Backups",
+    "scbr.recovery.list.hintType": "Alle Backups fuer {documentType}.",
+    "scbr.recovery.list.hintDocument": "Backups fuer das geloeschte Dokument {documentName}.",
+    "scbr.recovery.list.empty": "Es existieren keine Backups fuer {documentType}.",
+    "scbr.recovery.list.emptyDocument": "Es existieren keine Backups fuer {documentName}.",
+    "scbr.backup.unnamed": "Unbenanntes Backup",
+    "scbr.backup.noDate": "Kein Zeitstempel",
+    "scbr.document.unknown": "Dokument",
+    "scbr.notification.backupCreated": "Backup '{backupName}' fuer '{documentName}' erstellt.",
+    "scbr.notification.backupRestored": "Backup '{backupName}' fuer '{documentName}' wiederhergestellt.",
+    "scbr.notification.backupRemoved": "Backup '{backupName}' fuer '{documentName}' entfernt.",
+    "scbr.notification.reconstructed": "'{documentName}' aus Backup '{backupName}' rekonstruiert.",
+    "scbr.notification.noBackup": "Fuer '{documentName}' existiert kein Backup.",
+    "scbr.notification.invalidBackup": "Das gespeicherte Backup fuer '{documentName}' ist ungueltig.",
+    "scbr.notification.documentMissing": "Das ausgewaehlte Element wurde nicht gefunden.",
+    "scbr.notification.selectDocument": "Waehle ein vorhandenes Dokument aus, bevor Du ein Backup erstellst.",
+    "scbr.notification.unsupportedRecovery": "Wiederherstellung wird fuer '{documentType}' nicht unterstuetzt.",
+    "scbr.notification.error": "Sephral’s Content Backup & Restore fehlgeschlagen: {message}"
+  },
+  fr: {
+    "scbr.context.label": "Sephral’s Content Backup & Restore",
+    "scbr.action.backup": "Creer une sauvegarde",
+    "scbr.action.remove": "Supprimer la sauvegarde",
+    "scbr.action.cancel": "Annuler",
+    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
+    "scbr.dialog.summary.latest": "Derniere sauvegarde : {latest}.",
+    "scbr.dialog.summary.noneShort": "Creez la premiere sauvegarde pour ce document.",
+    "scbr.dialog.create.title": "Creer une sauvegarde",
+    "scbr.dialog.create.summary": "Creer une nouvelle sauvegarde pour {documentName}.",
+    "scbr.dialog.create.nameLabel": "Nom de la sauvegarde",
+    "scbr.dialog.create.hint": "La date et l'heure actuelles sont enregistrees automatiquement.",
+    "scbr.dialog.create.submit": "Creer une sauvegarde",
+    "scbr.dialog.deleteConfirm.title": "Supprimer la sauvegarde",
+    "scbr.dialog.deleteConfirm.body": "Supprimer la sauvegarde '{backupName}' de '{documentName}' ?",
+    "scbr.dialog.deleteConfirm.confirm": "Supprimer",
+    "scbr.manager.empty": "Aucune sauvegarde de document n'est encore disponible.",
+    "scbr.manager.selectionLabel": "Sauvegardes enregistrees",
+    "scbr.manager.hint": "Choisissez une sauvegarde pour la restaurer ou la supprimer.",
+    "scbr.manager.sortHint": "Les plus recentes d'abord, actions a droite.",
+    "scbr.manager.countLabel": "Sauvegardes",
+    "scbr.manager.emptyTitle": "Aucune sauvegarde",
+    "scbr.manager.available": "Disponible",
+    "scbr.manager.restore": "Restaurer la sauvegarde",
+    "scbr.manager.reconstruct": "Reconstruire le document",
+    "scbr.manager.missing": "[supprime]",
+    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
+    "scbr.settings.tool.label": "Open SCBR",
+    "scbr.settings.tool.hint": "Ouvrir la boite de dialogue de sauvegarde unifiee pour tous les documents de monde pris en charge.",
+    "scbr.settings.preferences.name": "Parametres d'interface",
+    "scbr.settings.preferences.label": "Ouvrir les parametres d'interface",
+    "scbr.settings.preferences.hint": "Choisissez la langue et le design de cette interface de module.",
+    "scbr.settings.preferences.title": "Parametres d'interface",
+    "scbr.settings.preferences.summary": "Definissez l'apparence de Sephral’s Content Backup & Restore et la langue du module.",
+    "scbr.settings.preferences.section": "Options d'affichage",
+    "scbr.settings.preferences.sectionHint": "Ces preferences sont enregistrees par utilisateur et s'appliquent a l'interface du module.",
+    "scbr.settings.language.label": "Langue",
+    "scbr.settings.language.hint": "Utilisez la langue de Foundry ou forcez l'une des langues prises en charge par le module.",
+    "scbr.settings.language.default": "Suivre Foundry",
+    "scbr.settings.language.en": "English",
+    "scbr.settings.language.de": "Deutsch",
+    "scbr.settings.language.fr": "Francais",
+    "scbr.settings.language.es": "Espanol",
+    "scbr.settings.theme.label": "Design",
+    "scbr.settings.theme.hint": "Basculez entre le style signature actuel et une presentation proche de Foundry.",
+    "scbr.settings.theme.signature": "Signature",
+    "scbr.settings.theme.foundry": "Style Foundry",
+    "scbr.settings.save": "Enregistrer les parametres",
+    "scbr.settings.saved": "Parametres d'interface mis a jour.",
+    "scbr.filter.document.label": "Document",
+    "scbr.filter.document.all": "Tous les {documentType}",
+    "scbr.recovery.type.label": "Type de document",
+    "scbr.recovery.list.label": "Sauvegardes de {documentType}",
+    "scbr.recovery.list.hintType": "Toutes les sauvegardes pour {documentType}.",
+    "scbr.recovery.list.hintDocument": "Sauvegardes du document supprime {documentName}.",
+    "scbr.recovery.list.empty": "Aucune sauvegarde n'existe pour {documentType}.",
+    "scbr.recovery.list.emptyDocument": "Aucune sauvegarde n'existe pour {documentName}.",
+    "scbr.backup.unnamed": "Sauvegarde sans nom",
+    "scbr.backup.noDate": "Aucun horodatage",
+    "scbr.document.unknown": "Document",
+    "scbr.notification.backupCreated": "Sauvegarde '{backupName}' creee pour '{documentName}'.",
+    "scbr.notification.backupRestored": "Sauvegarde '{backupName}' restauree pour '{documentName}'.",
+    "scbr.notification.backupRemoved": "Sauvegarde '{backupName}' supprimee pour '{documentName}'.",
+    "scbr.notification.reconstructed": "'{documentName}' reconstruit depuis la sauvegarde '{backupName}'.",
+    "scbr.notification.noBackup": "Aucune sauvegarde n'existe pour '{documentName}'.",
+    "scbr.notification.invalidBackup": "La sauvegarde stockee pour '{documentName}' est invalide.",
+    "scbr.notification.documentMissing": "Le document selectionne est introuvable.",
+    "scbr.notification.selectDocument": "Selectionnez un document existant avant de creer une sauvegarde.",
+    "scbr.notification.unsupportedRecovery": "La restauration n'est pas prise en charge pour '{documentType}'.",
+    "scbr.notification.error": "Sephral’s Content Backup & Restore a echoue : {message}"
+  },
+  es: {
+    "scbr.context.label": "Sephral’s Content Backup & Restore",
+    "scbr.action.backup": "Crear copia de seguridad",
+    "scbr.action.remove": "Eliminar copia de seguridad",
+    "scbr.action.cancel": "Cancelar",
+    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
+    "scbr.dialog.summary.latest": "Ultima copia de seguridad: {latest}.",
+    "scbr.dialog.summary.noneShort": "Crea la primera copia de seguridad para este documento.",
+    "scbr.dialog.create.title": "Crear copia de seguridad",
+    "scbr.dialog.create.summary": "Crear una nueva copia de seguridad para {documentName}.",
+    "scbr.dialog.create.nameLabel": "Nombre de la copia",
+    "scbr.dialog.create.hint": "La fecha y la hora actuales se guardan automaticamente.",
+    "scbr.dialog.create.submit": "Crear copia de seguridad",
+    "scbr.dialog.deleteConfirm.title": "Eliminar copia de seguridad",
+    "scbr.dialog.deleteConfirm.body": "Eliminar la copia de seguridad '{backupName}' de '{documentName}'?",
+    "scbr.dialog.deleteConfirm.confirm": "Eliminar",
+    "scbr.manager.empty": "Todavia no hay copias de seguridad de documentos.",
+    "scbr.manager.selectionLabel": "Copias guardadas",
+    "scbr.manager.hint": "Elige una copia para restaurarla o eliminarla.",
+    "scbr.manager.sortHint": "Las mas recientes primero, acciones a la derecha.",
+    "scbr.manager.countLabel": "Copias",
+    "scbr.manager.emptyTitle": "Aun no hay copias",
+    "scbr.manager.available": "Disponible",
+    "scbr.manager.restore": "Restaurar copia de seguridad",
+    "scbr.manager.reconstruct": "Reconstruir documento",
+    "scbr.manager.missing": "[eliminado]",
+    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
+    "scbr.settings.tool.label": "Open SCBR",
+    "scbr.settings.tool.hint": "Abrir el dialogo de copias unificado para todos los documentos de mundo compatibles.",
+    "scbr.settings.preferences.name": "Configuracion de interfaz",
+    "scbr.settings.preferences.label": "Abrir configuracion de interfaz",
+    "scbr.settings.preferences.hint": "Elige el idioma y el diseno para esta interfaz del modulo.",
+    "scbr.settings.preferences.title": "Configuracion de interfaz",
+    "scbr.settings.preferences.summary": "Ajusta el aspecto de Sephral’s Content Backup & Restore y el idioma del modulo.",
+    "scbr.settings.preferences.section": "Opciones de visualizacion",
+    "scbr.settings.preferences.sectionHint": "Estas preferencias se guardan por usuario y se aplican a la interfaz del modulo.",
+    "scbr.settings.language.label": "Idioma",
+    "scbr.settings.language.hint": "Usa el idioma de Foundry o fuerza uno de los idiomas compatibles del modulo.",
+    "scbr.settings.language.default": "Seguir a Foundry",
+    "scbr.settings.language.en": "English",
+    "scbr.settings.language.de": "Deutsch",
+    "scbr.settings.language.fr": "Francais",
+    "scbr.settings.language.es": "Espanol",
+    "scbr.settings.theme.label": "Diseno",
+    "scbr.settings.theme.hint": "Cambia entre el estilo signature actual y una disposicion cercana al estilo Foundry.",
+    "scbr.settings.theme.signature": "Signature",
+    "scbr.settings.theme.foundry": "Predeterminado de Foundry",
+    "scbr.settings.save": "Guardar configuracion",
+    "scbr.settings.saved": "Configuracion de interfaz actualizada.",
+    "scbr.filter.document.label": "Documento",
+    "scbr.filter.document.all": "Todos los {documentType}",
+    "scbr.recovery.type.label": "Tipo de documento",
+    "scbr.recovery.list.label": "Copias de {documentType}",
+    "scbr.recovery.list.hintType": "Todas las copias para {documentType}.",
+    "scbr.recovery.list.hintDocument": "Copias del documento eliminado {documentName}.",
+    "scbr.recovery.list.empty": "No existen copias para {documentType}.",
+    "scbr.recovery.list.emptyDocument": "No existen copias para {documentName}.",
+    "scbr.backup.unnamed": "Copia sin nombre",
+    "scbr.backup.noDate": "Sin marca de tiempo",
+    "scbr.document.unknown": "Documento",
+    "scbr.notification.backupCreated": "Copia '{backupName}' creada para '{documentName}'.",
+    "scbr.notification.backupRestored": "Copia '{backupName}' restaurada para '{documentName}'.",
+    "scbr.notification.backupRemoved": "Copia '{backupName}' eliminada para '{documentName}'.",
+    "scbr.notification.reconstructed": "'{documentName}' reconstruido desde la copia '{backupName}'.",
+    "scbr.notification.noBackup": "No existe ninguna copia para '{documentName}'.",
+    "scbr.notification.invalidBackup": "La copia guardada para '{documentName}' no es valida.",
+    "scbr.notification.documentMissing": "No se pudo encontrar el documento seleccionado.",
+    "scbr.notification.selectDocument": "Selecciona un documento activo antes de crear una copia.",
+    "scbr.notification.unsupportedRecovery": "La recuperacion no es compatible con '{documentType}'.",
+    "scbr.notification.error": "Sephral’s Content Backup & Restore ha fallado: {message}"
+  }
+};
+
+const SUPPORTED_UI_LANGUAGES = Object.freeze(Object.keys(MODULE_TRANSLATIONS));
+const DEFAULT_UI_LANGUAGE = "en";
+
+const SUPPORTED_DOCUMENTS = [
+  { documentName: "Scene", getCollection: () => game.scenes },
+  { documentName: "Actor", getCollection: () => game.actors },
+  { documentName: "Item", getCollection: () => game.items },
+  { documentName: "JournalEntry", getCollection: () => game.journal },
+  { documentName: "RollTable", getCollection: () => game.tables },
+  { documentName: "Cards", getCollection: () => game.cards },
+  { documentName: "Playlist", getCollection: () => game.playlists },
+  { documentName: "Macro", getCollection: () => game.macros },
+  { documentName: "Combat", getCollection: () => game.combats }
+];
+
+function localize(key, fallback, languageOverride) {
+  const override = MODULE_TRANSLATIONS[getModuleLanguage(languageOverride)]?.[key];
+  if (override) return override;
+  const value = game.i18n.localize(key);
+  return value === key ? fallback : value;
+}
+
+function format(key, data, fallback, languageOverride) {
+  const override = MODULE_TRANSLATIONS[getModuleLanguage(languageOverride)]?.[key];
+  if (override) return interpolateTemplate(override, data);
+  const value = game.i18n.format(key, data);
+  return value === key ? fallback : value;
+}
+
+function interpolateTemplate(template, data={}) {
+  return String(template ?? "").replace(/\{([^}]+)\}/g, (_match, field) => {
+    const replacement = data[field];
+    return replacement === undefined || replacement === null ? `{${field}}` : String(replacement);
+  });
+}
+
+function getRegisteredSettingValue(settingKey, fallback) {
+  const fullKey = `${MODULE_ID}.${settingKey}`;
+  if (!game?.settings?.settings?.has(fullKey)) return fallback;
+
+  try {
+    return game.settings.get(MODULE_ID, settingKey);
+  } catch (_error) {
+    return fallback;
+  }
+}
+
+function getPreferredLanguage() {
+  return getRegisteredSettingValue(UI_LANGUAGE_SETTING, "default");
+}
+
+function normalizeUiLanguage(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (!normalized) return DEFAULT_UI_LANGUAGE;
+  if (SUPPORTED_UI_LANGUAGES.includes(normalized)) return normalized;
+
+  const baseLanguage = normalized.split(/[-_.]/)[0];
+  return SUPPORTED_UI_LANGUAGES.includes(baseLanguage) ? baseLanguage : DEFAULT_UI_LANGUAGE;
+}
+
+function getModuleLanguage(preferredLanguage=getPreferredLanguage()) {
+  if (SUPPORTED_UI_LANGUAGES.includes(preferredLanguage)) return preferredLanguage;
+  return normalizeUiLanguage(game.i18n?.lang);
+}
+
+function getThemePreference() {
+  return getRegisteredSettingValue(UI_THEME_SETTING, "signature");
+}
+
+function getLocaleForModule(preferredLanguage=getPreferredLanguage()) {
+  return preferredLanguage === "default" ? normalizeUiLanguage(game.i18n?.lang) : preferredLanguage;
+}
+
+function getDocumentType(document) {
+  return document?.documentName ?? document?.constructor?.metadata?.name ?? null;
+}
+
+function getSupportedDocumentConfig(documentName) {
+  return SUPPORTED_DOCUMENTS.find((config) => config.documentName === documentName) ?? null;
+}
+
+function getDocumentCollection(documentName) {
+  return getSupportedDocumentConfig(documentName)?.getCollection() ?? null;
+}
+
+function getDocumentTypeLabel(documentOrName) {
+  const documentName = typeof documentOrName === "string" ? documentOrName : getDocumentType(documentOrName);
+  if (!documentName) return localize("scbr.document.unknown", "Document");
+
+  const key = `DOCUMENT.${documentName}`;
+  const localized = game.i18n.localize(key);
+  return localized === key ? documentName : localized;
+}
+
+function getDocumentDisplayName(document) {
+  const name = document?.name?.trim();
+  if (name) return name;
+  return `${getDocumentTypeLabel(document)} ${document?.id ?? ""}`.trim();
+}
+
+function getTimestampString(dateString, languageOverride) {
+  if (!dateString) return null;
+
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return dateString;
+  return date.toLocaleString(getLocaleForModule(languageOverride));
+}
+
+function formatBackupLabel(backup, languageOverride) {
+  const timestamp = getTimestampString(backup?.createdAt, languageOverride);
+  const name = backup?.name?.trim() || localize("scbr.backup.unnamed", "Unnamed Backup", languageOverride);
+  return timestamp ? `${name} (${timestamp})` : name;
+}
+
+function escapeHtml(value) {
+  return foundry.utils.escapeHTML(String(value ?? ""));
+}
+
+function getBackupDisplayParts(backup, languageOverride) {
+  return {
+    name: backup?.name?.trim() || localize("scbr.backup.unnamed", "Unnamed Backup", languageOverride),
+    timestamp: getTimestampString(backup?.createdAt, languageOverride) || localize("scbr.backup.noDate", "No timestamp", languageOverride)
+  };
+}
+
+function ensureStylesLoaded() {
+  const href = `modules/${MODULE_ID}/styles/scbr.css`;
+  if (document.querySelector(`link[data-${MODULE_ID}-styles]`)) return;
+  if (Array.from(document.styleSheets).some((sheet) => sheet.href?.includes(href))) return;
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.href = `${href}?v=${encodeURIComponent(game.modules.get(MODULE_ID)?.version ?? Date.now())}`;
+  link.setAttribute(`data-${MODULE_ID}-styles`, "true");
+  document.head.append(link);
+}
+
+function applyDialogTheme(element, theme=getThemePreference()) {
+  if (!element) return;
+
+  const resolvedTheme = theme === "foundry" ? "foundry" : "signature";
+  element.dataset.uiTheme = resolvedTheme;
+  element.classList.toggle("is-theme-foundry", resolvedTheme === "foundry");
+  element.classList.toggle("is-theme-signature", resolvedTheme !== "foundry");
+}
+
+function normalizeBackup(backup) {
+  if (!backup?.data || typeof backup.data !== "object") return null;
+
+  return {
+    id: backup.id || foundry.utils.randomID(),
+    name: backup.name?.trim() || backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
+    documentId: backup.documentId || null,
+    documentName: backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
+    documentType: backup.documentType || null,
+    createdAt: backup.createdAt || new Date().toISOString(),
+    coreGeneration: backup.coreGeneration ?? null,
+    data: foundry.utils.deepClone(backup.data)
+  };
+}
+
+function getBackupStore() {
+  const stored = game.settings.get(MODULE_ID, STORE_SETTING);
+  if (!stored || !Array.isArray(stored.backups)) {
+    return {
+      version: BACKUP_STORAGE_VERSION,
+      backups: []
+    };
+  }
+
+  return {
+    version: stored.version ?? BACKUP_STORAGE_VERSION,
+    backups: stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean)
+  };
+}
+
+function getLegacyBackupStore(moduleId) {
+  const stored = game.settings.get(moduleId, STORE_SETTING);
+  if (!stored || !Array.isArray(stored.backups)) return [];
+  return stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean);
+}
+
+async function saveBackupStore(backups) {
+  await game.settings.set(MODULE_ID, STORE_SETTING, {
+    version: BACKUP_STORAGE_VERSION,
+    backups
+  });
+}
+
+function getAllBackups() {
+  return getBackupStore().backups.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+}
+
+function getBackups(document) {
+  const documentType = getDocumentType(document);
+  return getAllBackups().filter((backup) => backup.documentType === documentType && backup.documentId === document.id);
+}
+
+function getBackupById(document, backupId) {
+  return getBackups(document).find((backup) => backup.id === backupId) ?? null;
+}
+
+async function setBackups(document, backups) {
+  const documentType = getDocumentType(document);
+  const remaining = getAllBackups().filter((backup) => !(backup.documentType === documentType && backup.documentId === document.id));
+  await saveBackupStore([...remaining, ...backups].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))));
+}
+
+function getLegacyBackups(document) {
+  const namespaces = [MODULE_ID, ...LEGACY_MODULE_IDS];
+  let stored = null;
+
+  for (const namespace of namespaces) {
+    stored = foundry.utils.getProperty(document, `flags.${namespace}.${LEGACY_FLAG}`);
+    if (stored) break;
+  }
+
+  if (!stored && getDocumentType(document) === "Scene") {
+    for (const namespace of namespaces) {
+      stored = foundry.utils.getProperty(document, `flags.${namespace}.${LEGACY_SCENE_BACKUP_FLAG}`);
+      if (stored) break;
+    }
+  }
+
+  if (!stored) return [];
+
+  const rawBackups = Array.isArray(stored?.backups)
+    ? stored.backups
+    : Array.isArray(stored)
+      ? stored
+      : [stored];
+
+  return rawBackups
+    .map((backup) => normalizeBackup({
+      ...backup,
+      documentId: backup.documentId || document.id,
+      documentName: backup.documentName || getDocumentDisplayName(document),
+      documentType: backup.documentType || getDocumentType(document)
+    }))
+    .filter(Boolean);
+}
+
+async function migrateLegacyBackups() {
+  const existing = getAllBackups();
+  const seen = new Set(existing.map((backup) => `${backup.documentType}|${backup.documentId}|${backup.id}`));
+  const merged = [...existing];
+  let changed = false;
+
+  for (const legacyModuleId of LEGACY_MODULE_IDS) {
+    for (const backup of getLegacyBackupStore(legacyModuleId)) {
+      const key = `${backup.documentType}|${backup.documentId}|${backup.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(backup);
+      changed = true;
+    }
+  }
+
+  for (const config of SUPPORTED_DOCUMENTS) {
+    for (const document of config.getCollection()?.contents ?? []) {
+      const legacyBackups = getLegacyBackups(document);
+      if (!legacyBackups.length) continue;
+
+      for (const backup of legacyBackups) {
+        const key = `${backup.documentType}|${backup.documentId}|${backup.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        merged.push(backup);
+        changed = true;
+      }
+
+      for (const namespace of LEGACY_MODULE_IDS) {
+        await document.unsetFlag(namespace, LEGACY_FLAG);
+        if (config.documentName === "Scene") {
+          await document.unsetFlag(namespace, LEGACY_SCENE_BACKUP_FLAG);
+        }
+      }
+    }
+  }
+
+  if (changed) {
+    await saveBackupStore(merged.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))));
+  }
+}
+
+function getContextDataset(target) {
+  if (!target) return null;
+  if (target instanceof HTMLElement) return target.dataset;
+  if (typeof target.data === "function") {
+    return {
+      entryId: target.data("entryId"),
+      sceneId: target.data("sceneId"),
+      documentId: target.data("documentId")
+    };
+  }
+  return null;
+}
+
+function getDocumentIdFromContext(target) {
+  const dataset = getContextDataset(target);
+  return dataset?.entryId ?? dataset?.sceneId ?? dataset?.documentId ?? null;
+}
+
+function buildBackupPayload(document, name) {
+  const data = document.toObject();
+  if (data.flags?.[MODULE_ID]) {
+    delete data.flags[MODULE_ID];
+    if (!Object.keys(data.flags).length) delete data.flags;
+  }
+
+  return {
+    id: foundry.utils.randomID(),
+    name: name?.trim() || getDocumentDisplayName(document),
+    documentId: document.id,
+    documentName: getDocumentDisplayName(document),
+    documentType: getDocumentType(document),
+    createdAt: new Date().toISOString(),
+    coreGeneration: game.release?.generation ?? null,
+    data
+  };
+}
+
+function sanitizeFlags(data) {
+  if (!data.flags?.[MODULE_ID]) return;
+  delete data.flags[MODULE_ID];
+  if (!Object.keys(data.flags).length) delete data.flags;
+}
+
+function buildRestoreData(document, backup) {
+  if (!backup?.data || typeof backup.data !== "object") {
+    throw new Error(format("scbr.notification.invalidBackup", { documentName: getDocumentDisplayName(document) }, `The stored backup for '${getDocumentDisplayName(document)}' is invalid.`));
+  }
+
+  const restoreData = foundry.utils.deepClone(backup.data);
+  restoreData._id = document.id;
+  restoreData.name ??= getDocumentDisplayName(document);
+  sanitizeFlags(restoreData);
+  return restoreData;
+}
+
+function buildReconstructionData(backup) {
+  const createData = foundry.utils.deepClone(backup.data);
+  delete createData._id;
+  createData.name ??= backup.documentName;
+  sanitizeFlags(createData);
+
+  if (createData.folder && !game.folders.get(createData.folder)) {
+    createData.folder = null;
+  }
+
+  return createData;
+}
+
+function getDocumentBackupSummary(document) {
+  const backups = getBackups(document);
+  if (!backups.length) return null;
+  return {
+    count: backups.length,
+    latest: backups[0]
+  };
+}
+
+function resolveDocumentForBackup(backup) {
+  return getDocumentCollection(backup.documentType)?.get(backup.documentId) ?? null;
+}
+
+function createEntryFromBackup(backup) {
+  return {
+    backup,
+    document: resolveDocumentForBackup(backup)
+  };
+}
+
+async function promptForBackupName(document) {
+  const defaultName = getDocumentDisplayName(document);
+  const content = buildDialogLayout({
+    eyebrow: getDocumentTypeLabel(document),
+    title: localize("scbr.dialog.create.title", "Create Backup"),
+    summary: format("scbr.dialog.create.summary", { documentName: getDocumentDisplayName(document) }, `Create a new backup for ${getDocumentDisplayName(document)}.`),
+    count: getBackups(document).length,
+    sectionLabel: localize("scbr.dialog.create.nameLabel", "Backup name"),
+    sectionHint: localize("scbr.dialog.create.hint", "The current date and time are stored automatically."),
+    showCount: false,
+    showPanelHeader: false,
+    rowsHtml: `
+      <div class="scbr-input-panel">
+        <div class="scbr-field-group">
+          <label class="scbr-panel-title" for="scbr-name-input">${escapeHtml(localize("scbr.dialog.create.nameLabel", "Backup name"))}</label>
+          <input id="scbr-name-input" class="scbr-text-input" type="text" name="backupName" value="${escapeHtml(defaultName)}" autofocus>
+        </div>
+      </div>
+    `
+  });
+
+  const name = await waitForBackupDialog({
+    title: localize("scbr.dialog.create.title", "Create Backup"),
+    content,
+    dialogClass: "scbr-dialog scbr-create-dialog",
+    width: 720,
+    autoHeight: true,
+    onRender: (dialog) => {
+      const input = dialog.element.querySelector("#scbr-name-input");
+      input?.focus();
+      input?.select();
+    },
+    buttons: [
+      {
+        action: "submit",
+        label: localize("scbr.dialog.create.submit", "Create Backup"),
+        default: true,
+        callback: (_event, button) => button.form.elements.backupName.value.trim()
+      },
+      {
+        action: "cancel",
+        label: localize("scbr.action.cancel", "Cancel")
+      }
+    ]
+  });
+
+  return name ?? null;
+}
+
+async function createBackup(document) {
+  const name = await promptForBackupName(document);
+  if (name === null) return;
+
+  const backups = getBackups(document);
+  const payload = buildBackupPayload(document, name);
+  backups.unshift(payload);
+
+  await setBackups(document, backups);
+  ui.notifications.info(format("scbr.notification.backupCreated", {
+    backupName: formatBackupLabel(payload),
+    documentName: getDocumentDisplayName(document)
+  }, `Backup '${formatBackupLabel(payload)}' created for '${getDocumentDisplayName(document)}'.`));
+}
+
+async function restoreBackup(document, backupId) {
+  const backup = getBackupById(document, backupId);
+  if (!backup) {
+    ui.notifications.warn(format("scbr.notification.noBackup", { documentName: getDocumentDisplayName(document) }, `No backup exists for '${getDocumentDisplayName(document)}'.`));
+    return;
+  }
+
+  const restoreData = buildRestoreData(document, backup);
+  await document.update(restoreData, { diff: false, recursive: false });
+
+  if (getDocumentType(document) === "Scene" && canvas?.scene?.id === document.id) {
+    await canvas.draw();
+  }
+
+  ui.notifications.info(format("scbr.notification.backupRestored", {
+    backupName: formatBackupLabel(backup),
+    documentName: getDocumentDisplayName(document)
+  }, `Backup '${formatBackupLabel(backup)}' restored for '${getDocumentDisplayName(document)}'.`));
+}
+
+async function reconstructDocumentFromBackup(backup) {
+  const collection = getDocumentCollection(backup.documentType);
+  if (!collection?.documentClass) {
+    throw new Error(format("scbr.notification.unsupportedRecovery", { documentType: getDocumentTypeLabel(backup.documentType) }, `Recovery is not supported for '${getDocumentTypeLabel(backup.documentType)}'.`));
+  }
+
+  const createData = buildReconstructionData(backup);
+  const created = await collection.documentClass.create(createData, { renderSheet: true });
+  if (!created) return null;
+
+  const updatedBackups = getAllBackups().map((entry) => {
+    if (entry.documentType !== backup.documentType || entry.documentId !== backup.documentId) return entry;
+    return {
+      ...entry,
+      documentId: created.id,
+      documentName: getDocumentDisplayName(created),
+      data: {
+        ...foundry.utils.deepClone(entry.data),
+        _id: created.id,
+        name: getDocumentDisplayName(created)
+      }
+    };
+  });
+  await saveBackupStore(updatedBackups);
+
+  ui.notifications.info(format("scbr.notification.reconstructed", {
+    documentName: getDocumentDisplayName(created),
+    backupName: formatBackupLabel(backup)
+  }, `Reconstructed '${getDocumentDisplayName(created)}' from backup '${formatBackupLabel(backup)}'.`));
+
+  return created;
+}
+
+async function removeBackupByEntry(backup) {
+  const remaining = getAllBackups().filter((entry) => entry.id !== backup.id);
+  await saveBackupStore(remaining);
+}
+
+async function removeBackup(document, backupId) {
+  const backup = getBackupById(document, backupId);
+  if (!backup) {
+    ui.notifications.warn(format("scbr.notification.noBackup", { documentName: getDocumentDisplayName(document) }, `No backup exists for '${getDocumentDisplayName(document)}'.`));
+    return;
+  }
+
+  const confirmed = await foundry.applications.api.DialogV2.confirm({
+    window: {
+      title: localize("scbr.dialog.deleteConfirm.title", "Delete Backup")
+    },
+    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.deleteConfirm.body", {
+      backupName: formatBackupLabel(backup),
+      documentName: getDocumentDisplayName(document)
+    }, `Delete backup '${formatBackupLabel(backup)}' from '${getDocumentDisplayName(document)}'?`))}</p>`,
+    yes: {
+      label: localize("scbr.dialog.deleteConfirm.confirm", "Delete")
+    },
+    no: {
+      label: localize("scbr.action.cancel", "Cancel")
+    },
+    rejectClose: false,
+    modal: true
+  });
+  if (!confirmed) return;
+
+  await removeBackupByEntry(backup);
+  ui.notifications.info(format("scbr.notification.backupRemoved", {
+    backupName: formatBackupLabel(backup),
+    documentName: getDocumentDisplayName(document)
+  }, `Backup '${formatBackupLabel(backup)}' removed for '${getDocumentDisplayName(document)}'.`));
+}
+
+async function removeBackupEntry(entry) {
+  const documentName = entry.document ? getDocumentDisplayName(entry.document) : entry.backup.documentName;
+  const confirmed = await foundry.applications.api.DialogV2.confirm({
+    window: {
+      title: localize("scbr.dialog.deleteConfirm.title", "Delete Backup")
+    },
+    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.deleteConfirm.body", {
+      backupName: formatBackupLabel(entry.backup),
+      documentName
+    }, `Delete backup '${formatBackupLabel(entry.backup)}' from '${documentName}'?`))}</p>`,
+    yes: {
+      label: localize("scbr.dialog.deleteConfirm.confirm", "Delete")
+    },
+    no: {
+      label: localize("scbr.action.cancel", "Cancel")
+    },
+    rejectClose: false,
+    modal: true
+  });
+  if (!confirmed) return;
+
+  await removeBackupByEntry(entry.backup);
+  ui.notifications.info(format("scbr.notification.backupRemoved", {
+    backupName: formatBackupLabel(entry.backup),
+    documentName
+  }, `Backup '${formatBackupLabel(entry.backup)}' removed for '${documentName}'.`));
+}
+
+async function runDocumentAction(document, action) {
+  try {
+    await action(document);
+  } catch (error) {
+    console.error(`${MODULE_ID} |`, error);
+    ui.notifications.error(format("scbr.notification.error", { message: error.message ?? String(error) }, `Sephral’s Content Backup & Restore failed: ${error.message ?? String(error)}`));
+  }
+}
+
+async function runRecoveryAction(action) {
+  try {
+    await action();
+  } catch (error) {
+    console.error(`${MODULE_ID} |`, error);
+    ui.notifications.error(format("scbr.notification.error", { message: error.message ?? String(error) }, `Sephral’s Content Backup & Restore failed: ${error.message ?? String(error)}`));
+  }
+}
+
+function getEntryPrimaryAction(entry, { recoveryMode=false } = {}) {
+  if (entry.document) {
+    return {
+      action: "restore",
+      tooltip: localize("scbr.manager.restore", "Restore Backup"),
+      icon: "fas fa-rotate-left"
+    };
+  }
+
+  if (recoveryMode) {
+    return {
+      action: "reconstruct",
+      tooltip: localize("scbr.manager.reconstruct", "Reconstruct Document"),
+      icon: "fas fa-plus"
+    };
+  }
+
+  return null;
+}
+
+function getDocumentPickerOptions(documentType, selectedDocumentId, preferredDocument=null) {
+  const collection = getDocumentCollection(documentType);
+  const liveDocuments = collection?.contents ?? [];
+  const backupEntries = getAllBackups().filter((backup) => backup.documentType === documentType);
+  const optionMap = new Map();
+
+  for (const document of liveDocuments) {
+    optionMap.set(document.id, {
+      id: document.id,
+      name: getDocumentDisplayName(document),
+      deleted: false
+    });
+  }
+
+  for (const backup of backupEntries) {
+    if (!optionMap.has(backup.documentId)) {
+      optionMap.set(backup.documentId, {
+        id: backup.documentId,
+        name: backup.documentName,
+        deleted: true
+      });
+    }
+  }
+
+  if (preferredDocument && getDocumentType(preferredDocument) === documentType && !optionMap.has(preferredDocument.id)) {
+    optionMap.set(preferredDocument.id, {
+      id: preferredDocument.id,
+      name: getDocumentDisplayName(preferredDocument),
+      deleted: false
+    });
+  }
+
+  const sortedOptions = Array.from(optionMap.values()).sort((left, right) => left.name.localeCompare(right.name, getLocaleForModule()));
+  const allLabel = format("scbr.filter.document.all", { documentType: getDocumentTypeLabel(documentType) }, `All ${getDocumentTypeLabel(documentType)}`);
+
+  return [
+    `<option value="">${escapeHtml(allLabel)}</option>`,
+    ...sortedOptions.map((option) => {
+      const selected = option.id === selectedDocumentId ? " selected" : "";
+      const suffix = option.deleted ? ` ${localize("scbr.manager.missing", "[deleted]")}` : "";
+      return `<option value="${escapeHtml(option.id)}"${selected}>${escapeHtml(`${option.name}${suffix}`)}</option>`;
+    })
+  ].join("");
+}
+
+function buildRecoveryTypeOptions(selectedType) {
+  return SUPPORTED_DOCUMENTS.map((config) => {
+    const count = getAllBackups().filter((backup) => backup.documentType === config.documentName).length;
+    const selected = config.documentName === selectedType ? " selected" : "";
+    return `<option value="${escapeHtml(config.documentName)}"${selected}>${escapeHtml(`${getDocumentTypeLabel(config.documentName)} (${count})`)}</option>`;
+  }).join("");
+}
+
+function buildDialogLayout({ eyebrow, title, summary, count, sectionLabel, sectionHint, rowsHtml, toolbarHtml="", showCount=true, showPanelHeader=true }) {
+  const countLabel = localize("scbr.manager.countLabel", "Backups");
+
+  return `
+    <div class="scbr-shell">
+      <section class="scbr-hero">
+        <div class="scbr-hero-copy">
+          <div class="scbr-eyebrow">${escapeHtml(eyebrow)}</div>
+          <div class="scbr-heading-row">
+            <h2 class="scbr-heading scbr-dynamic-title">${escapeHtml(title)}</h2>
+            ${showCount ? `<div class="scbr-stat-inline">
+              <span class="scbr-stat-value scbr-dynamic-count">${escapeHtml(count)}</span>
+              <span class="scbr-stat-label">${escapeHtml(countLabel)}</span>
+            </div>` : ""}
+          </div>
+          <p class="scbr-summary">${escapeHtml(summary)}</p>
+        </div>
+      </section>
+      <section class="scbr-panel">
+        ${showPanelHeader ? `<div class="scbr-panel-header">
+          <div class="scbr-panel-heading">
+            <label class="scbr-panel-title scbr-dynamic-section-label">${escapeHtml(sectionLabel)}</label>
+            <span class="scbr-panel-hint">${escapeHtml(sectionHint)}</span>
+          </div>
+          ${toolbarHtml}
+        </div>` : ""}
+        ${rowsHtml}
+      </section>
+    </div>
+  `;
+}
+
+function buildSelectOptions(options, selectedValue) {
+  return options.map((option) => {
+    const selected = option.value === selectedValue ? " selected" : "";
+    return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
+  }).join("");
+}
+
+function buildLanguageOptions(selectedValue, languageOverride) {
+  const options = [
+    { value: "default", label: localize("scbr.settings.language.default", "Follow Foundry", languageOverride) },
+    ...SUPPORTED_UI_LANGUAGES.map((language) => ({
+      value: language,
+      label: localize(`scbr.settings.language.${language}`, language, languageOverride)
+    }))
+  ];
+
+  return buildSelectOptions(options, selectedValue);
+}
+
+function buildThemeOptions(selectedValue, languageOverride) {
+  return buildSelectOptions([
+    { value: "signature", label: localize("scbr.settings.theme.signature", "Signature", languageOverride) },
+    { value: "foundry", label: localize("scbr.settings.theme.foundry", "Foundry Default", languageOverride) }
+  ], selectedValue);
+}
+
+function getPreferencesPreviewState(preferences={}) {
+  return {
+    uiLanguage: ["default", ...SUPPORTED_UI_LANGUAGES].includes(preferences.uiLanguage) ? preferences.uiLanguage : getPreferredLanguage(),
+    uiTheme: ["signature", "foundry"].includes(preferences.uiTheme) ? preferences.uiTheme : getThemePreference()
+  };
+}
+
+function buildSettingsLayout(preferences={}) {
+  const state = getPreferencesPreviewState(preferences);
+  return buildDialogLayout({
+    eyebrow: localize("scbr.settings.preferences.title", "Interface Settings", state.uiLanguage),
+    title: localize("scbr.dialog.title", "Sephral’s Content Backup & Restore", state.uiLanguage),
+    summary: localize("scbr.settings.preferences.summary", "Adjust how Sephral’s Content Backup & Restore looks and which module language it uses.", state.uiLanguage),
+    count: 0,
+    sectionLabel: localize("scbr.settings.preferences.section", "Display options", state.uiLanguage),
+    sectionHint: localize("scbr.settings.preferences.sectionHint", "These preferences are stored per user and apply to the module UI.", state.uiLanguage),
+    showCount: false,
+    rowsHtml: `
+      <div class="scbr-input-panel scbr-settings-grid">
+        <div class="scbr-field-group">
+          <label class="scbr-panel-title" for="scbr-language-select">${escapeHtml(localize("scbr.settings.language.label", "Language", state.uiLanguage))}</label>
+          <span class="scbr-panel-hint">${escapeHtml(localize("scbr.settings.language.hint", "Use the Foundry language or force this module to English or German.", state.uiLanguage))}</span>
+          <select id="scbr-language-select" class="scbr-select" name="uiLanguage">
+            ${buildLanguageOptions(state.uiLanguage, state.uiLanguage)}
+          </select>
+        </div>
+        <div class="scbr-field-group">
+          <label class="scbr-panel-title" for="scbr-theme-select">${escapeHtml(localize("scbr.settings.theme.label", "Design", state.uiLanguage))}</label>
+          <span class="scbr-panel-hint">${escapeHtml(localize("scbr.settings.theme.hint", "Switch between the current signature look and a Foundry-style default layout.", state.uiLanguage))}</span>
+          <select id="scbr-theme-select" class="scbr-select" name="uiTheme">
+            ${buildThemeOptions(state.uiTheme, state.uiLanguage)}
+          </select>
+        </div>
+      </div>
+    `
+  });
+}
+
+function updatePreferencesDialogPreview(dialog, preferences={}) {
+  const state = getPreferencesPreviewState(preferences);
+  const content = dialog.element.querySelector(".dialog-content");
+  if (content) content.innerHTML = buildSettingsLayout(state);
+
+  const title = localize("scbr.settings.preferences.title", "Interface Settings", state.uiLanguage);
+  dialog.element.querySelector(".window-title")?.replaceChildren(document.createTextNode(title));
+
+  const saveButton = dialog.element.querySelector('[data-action="save"]');
+  if (saveButton) saveButton.textContent = localize("scbr.settings.save", "Save Settings", state.uiLanguage);
+
+  const cancelButton = dialog.element.querySelector('[data-action="cancel"]');
+  if (cancelButton) cancelButton.textContent = localize("scbr.action.cancel", "Cancel", state.uiLanguage);
+
+  applyDialogTheme(dialog.element, state.uiTheme);
+  bindPreferencesDialogPreview(dialog);
+}
+
+function bindPreferencesDialogPreview(dialog) {
+  const languageSelect = dialog.element.querySelector("#scbr-language-select");
+  const themeSelect = dialog.element.querySelector("#scbr-theme-select");
+
+  languageSelect?.addEventListener("change", (event) => {
+    updatePreferencesDialogPreview(dialog, {
+      uiLanguage: event.currentTarget.value,
+      uiTheme: themeSelect?.value
+    });
+  });
+
+  themeSelect?.addEventListener("change", (event) => {
+    applyDialogTheme(dialog.element, event.currentTarget.value);
+  });
+}
+
+function getFilteredEntries(entries, { documentType, documentId }) {
+  return entries.filter((entry) => {
+    if (entry.backup.documentType !== documentType) return false;
+    if (documentId && entry.backup.documentId !== documentId) return false;
+    return true;
+  });
+}
+
+function getSelectedDocument(documentType, documentId) {
+  if (!documentId) return null;
+  return getDocumentCollection(documentType)?.get(documentId) ?? null;
+}
+
+function getSelectedDocumentName(documentType, documentId, entries) {
+  const document = getSelectedDocument(documentType, documentId);
+  if (document) return getDocumentDisplayName(document);
+  const entry = entries.find((currentEntry) => currentEntry.backup.documentType === documentType && currentEntry.backup.documentId === documentId);
+  return entry?.backup.documentName ?? getDocumentTypeLabel(documentType);
+}
+
+function getUnifiedDialogState({ documentType, documentId, entries }) {
+  const typeLabel = getDocumentTypeLabel(documentType);
+  const filteredEntries = getFilteredEntries(entries, { documentType, documentId });
+  const selectedDocument = getSelectedDocument(documentType, documentId);
+  const selectedDocumentName = documentId ? getSelectedDocumentName(documentType, documentId, entries) : typeLabel;
+
+  let title = selectedDocumentName;
+  let summary = localize("scbr.manager.hint", "Choose a backup to restore it or delete it.");
+  let sectionLabel = localize("scbr.manager.selectionLabel", "Saved backups");
+
+  if (selectedDocument) {
+    const summaryData = getDocumentBackupSummary(selectedDocument);
+    summary = summaryData
+      ? format("scbr.dialog.summary.latest", { latest: formatBackupLabel(summaryData.latest) }, `Latest backup: ${formatBackupLabel(summaryData.latest)}.`)
+      : localize("scbr.dialog.summary.noneShort", "Create the first backup for this document.");
+  } else if (documentId) {
+    summary = format("scbr.recovery.list.hintDocument", { documentName: selectedDocumentName }, `Deleted document backups for ${selectedDocumentName}.`);
+  } else {
+    summary = format("scbr.recovery.list.hintType", { documentType: typeLabel }, `All backups for ${typeLabel}.`);
+    title = typeLabel;
+    sectionLabel = format("scbr.recovery.list.label", { documentType: typeLabel }, `${typeLabel} backups`);
+  }
+
+  return {
+    typeLabel,
+    filteredEntries,
+    selectedDocument,
+    selectedDocumentName,
+    title,
+    summary,
+    sectionLabel
+  };
+}
+
+function buildBackupRows(entries, { includeDocumentDetails=false, recoveryMode=false } = {}) {
+  if (!entries.length) {
+    return `
+      <div class="scbr-empty-state">
+        <div class="scbr-empty-icon"><i class="fas fa-box-open"></i></div>
+        <div class="scbr-empty-title">${escapeHtml(localize("scbr.manager.emptyTitle", "No backups yet"))}</div>
+        <p class="scbr-empty-copy">${escapeHtml(localize("scbr.manager.empty", "No document backups are available yet."))}</p>
+      </div>
+    `;
+  }
+
+  const deleteTooltip = foundry.utils.escapeHTML(localize("scbr.action.remove", "Delete Backup"));
+
+  return `
+    <div class="scbr-backup-list">
+      ${entries.map((entry) => {
+        const primaryAction = getEntryPrimaryAction(entry, { recoveryMode });
+        const parts = getBackupDisplayParts(entry.backup);
+        const typeLabel = getDocumentTypeLabel(entry.backup.documentType);
+        const documentLabel = entry.backup.documentName;
+        const stateLabel = entry.document
+          ? localize("scbr.manager.available", "Available")
+          : localize("scbr.manager.missing", "[deleted]");
+        const stateClass = entry.document ? "is-available" : "is-missing";
+        const primaryButton = primaryAction
+          ? `<button type="button" class="scbr-inline-action is-primary" data-backup-action="${foundry.utils.escapeHTML(primaryAction.action)}" data-document-id="${foundry.utils.escapeHTML(entry.backup.documentId ?? "")}" data-document-type="${foundry.utils.escapeHTML(entry.backup.documentType ?? "")}" data-backup-id="${foundry.utils.escapeHTML(entry.backup.id)}" aria-label="${foundry.utils.escapeHTML(primaryAction.tooltip)}" title="${foundry.utils.escapeHTML(primaryAction.tooltip)}"><i class="${primaryAction.icon}"></i></button>`
+          : "";
+
+        return `
+          <div class="scbr-backup-row ${stateClass}" data-document-type="${escapeHtml(entry.backup.documentType ?? "")}" data-document-id="${escapeHtml(entry.backup.documentId ?? "")}">
+            <div class="scbr-backup-main">
+              <div class="scbr-backup-line">
+                <span class="scbr-backup-title">${escapeHtml(parts.name)}</span>
+                <span class="scbr-pill is-type">${escapeHtml(typeLabel)}</span>
+                ${includeDocumentDetails ? `<span class="scbr-backup-doc">${escapeHtml(documentLabel)}</span>` : ""}
+                <span class="scbr-backup-time">${escapeHtml(parts.timestamp)}</span>
+                <span class="scbr-pill ${stateClass}">${escapeHtml(stateLabel)}</span>
+              </div>
+            </div>
+            <div class="scbr-actions">
+              ${primaryButton}
+              <button type="button" class="scbr-inline-action" data-backup-action="delete" data-document-id="${foundry.utils.escapeHTML(entry.backup.documentId ?? "")}" data-document-type="${foundry.utils.escapeHTML(entry.backup.documentType ?? "")}" data-backup-id="${foundry.utils.escapeHTML(entry.backup.id)}" aria-label="${deleteTooltip}" title="${deleteTooltip}">
+                <i class="fas fa-trash"></i>
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function attachInlineBackupActions(dialog, onAction) {
+  dialog.element.querySelectorAll(".scbr-inline-action").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      const actionButton = event.currentTarget;
+      onAction({
+        action: actionButton.dataset.backupAction,
+        documentId: actionButton.dataset.documentId,
+        documentType: actionButton.dataset.documentType,
+        backupId: actionButton.dataset.backupId
+      });
+    });
+  });
+}
+
+function updateUnifiedDialogFilter(dialog, state, entries) {
+  const derived = getUnifiedDialogState({
+    documentType: state.documentType,
+    documentId: state.documentId,
+    entries
+  });
+  const visibleRows = Array.from(dialog.element.querySelectorAll(".scbr-backup-row"));
+  let visibleCount = 0;
+
+  for (const row of visibleRows) {
+    const matches = row.dataset.documentType === state.documentType && (!state.documentId || row.dataset.documentId === state.documentId);
+    row.hidden = !matches;
+    if (matches) visibleCount += 1;
+  }
+
+  const emptyState = dialog.element.querySelector(".scbr-filter-empty");
+  if (emptyState) emptyState.hidden = visibleCount > 0;
+  const emptyCopy = dialog.element.querySelector(".scbr-filter-empty .scbr-empty-copy");
+  if (emptyCopy) {
+    emptyCopy.textContent = state.documentId
+      ? format("scbr.recovery.list.emptyDocument", { documentName: derived.selectedDocumentName }, `No backups exist for ${derived.selectedDocumentName}.`)
+      : format("scbr.recovery.list.empty", { documentType: derived.typeLabel }, `No backups exist for ${derived.typeLabel}.`);
+  }
+
+  const heading = dialog.element.querySelector(".scbr-dynamic-title");
+  if (heading) heading.textContent = derived.title;
+
+  const sectionLabel = dialog.element.querySelector(".scbr-dynamic-section-label");
+  if (sectionLabel) {
+    sectionLabel.textContent = derived.sectionLabel;
+  }
+
+  const summary = dialog.element.querySelector(".scbr-summary");
+  if (summary) summary.textContent = derived.summary;
+
+  const countLabel = dialog.element.querySelector(".scbr-dynamic-count");
+  if (countLabel) countLabel.textContent = String(visibleCount);
+
+  const windowTitle = dialog.element.querySelector(".window-title");
+  if (windowTitle) {
+    windowTitle.textContent = state.documentId
+      ? `${localize("scbr.dialog.title", "Sephral’s Content Backup & Restore")} - ${derived.title}`
+      : `${localize("scbr.dialog.title", "Sephral’s Content Backup & Restore")} - ${derived.typeLabel}`;
+  }
+
+  const documentSelect = dialog.element.querySelector(".scbr-document-select");
+  if (documentSelect) {
+    documentSelect.innerHTML = getDocumentPickerOptions(state.documentType, state.documentId, state.contextDocument ?? null);
+    documentSelect.value = state.documentId ?? "";
+  }
+
+  const backupButton = Array.from(dialog.element.querySelectorAll(".form-footer button")).find((button) => button.textContent?.includes(localize("scbr.action.backup", "Create Backup")));
+  if (backupButton) {
+    backupButton.disabled = !derived.selectedDocument;
+  }
+}
+
+async function waitForBackupDialog({ title, content, buttons, dialogClass="scbr-dialog", width=1080, height=null, autoHeight=false, onRender=null }) {
+  ensureStylesLoaded();
+  let inlineResult = null;
+
+  return foundry.applications.api.DialogV2.wait({
+    window: {
+      title,
+      positioned: true
+    },
+    content,
+    buttons,
+    modal: true,
+    rejectClose: false,
+    close: () => inlineResult,
+    render: (_event, dialog) => {
+      const resolvedHeight = height ?? Math.min(window.innerHeight - 48, 860);
+      dialog.element.classList.add(...String(dialogClass).split(/\s+/).filter(Boolean));
+      applyDialogTheme(dialog.element);
+      dialog.element.style.setProperty("width", `${width}px`, "important");
+      dialog.element.style.setProperty("max-width", "calc(100vw - 32px)", "important");
+      dialog.element.style.setProperty("max-height", "calc(100vh - 32px)", "important");
+      if (autoHeight) {
+        dialog.element.style.removeProperty("height");
+        if (typeof dialog.setPosition === "function") {
+          dialog.setPosition({ width });
+        }
+      } else {
+        dialog.element.style.setProperty("height", `${resolvedHeight}px`, "important");
+        if (typeof dialog.setPosition === "function") {
+          dialog.setPosition({ width, height: resolvedHeight });
+        }
+      }
+      if (typeof onRender === "function") {
+        onRender(dialog);
+      }
+      attachInlineBackupActions(dialog, (result) => {
+        inlineResult = result;
+        dialog.close();
+      });
+    }
+  });
+}
+
+async function openPreferencesDialog() {
+  const result = await waitForBackupDialog({
+    title: localize("scbr.settings.preferences.title", "Interface Settings"),
+    content: buildSettingsLayout(),
+    dialogClass: "scbr-dialog scbr-settings-dialog",
+    width: 760,
+    autoHeight: true,
+    onRender: (dialog) => {
+      bindPreferencesDialogPreview(dialog);
+    },
+    buttons: [
+      {
+        action: "save",
+        label: localize("scbr.settings.save", "Save Settings"),
+        default: true,
+        callback: (_event, button) => ({
+          uiLanguage: button.form.elements.uiLanguage.value,
+          uiTheme: button.form.elements.uiTheme.value
+        })
+      },
+      {
+        action: "cancel",
+        label: localize("scbr.action.cancel", "Cancel")
+      }
+    ]
+  });
+
+  if (!result || typeof result !== "object") return;
+
+  const nextLanguage = ["default", ...SUPPORTED_UI_LANGUAGES].includes(result.uiLanguage) ? result.uiLanguage : "default";
+  const nextTheme = ["signature", "foundry"].includes(result.uiTheme) ? result.uiTheme : "signature";
+
+  await game.settings.set(MODULE_ID, UI_LANGUAGE_SETTING, nextLanguage);
+  await game.settings.set(MODULE_ID, UI_THEME_SETTING, nextTheme);
+  ui.notifications.info(localize("scbr.settings.saved", "Interface settings updated."));
+}
+
+function buildUnifiedToolbar(state) {
+  return `
+    <div class="scbr-toolbar is-wide">
+      <label class="scbr-filter-label" for="scbr-type-select">${escapeHtml(localize("scbr.recovery.type.label", "Document type"))}</label>
+      <select id="scbr-type-select" class="scbr-select scbr-type-select" name="documentType">${buildRecoveryTypeOptions(state.documentType)}</select>
+      <label class="scbr-filter-label" for="scbr-document-select">${escapeHtml(localize("scbr.filter.document.label", "Document"))}</label>
+      <select id="scbr-document-select" class="scbr-select scbr-document-select" name="documentId">${getDocumentPickerOptions(state.documentType, state.documentId, state.contextDocument ?? null)}</select>
+    </div>
+  `;
+}
+
+async function openBackupToolDialog({ document=null } = {}) {
+  const initialType = document ? getDocumentType(document) : await promptForRecoveryType();
+  const state = {
+    documentType: initialType,
+    documentId: document?.id ?? "",
+    contextDocument: document ?? null
+  };
+
+  while (true) {
+    const entries = getManagerEntries();
+    const derived = getUnifiedDialogState({
+      documentType: state.documentType,
+      documentId: state.documentId,
+      entries
+    });
+    const content = buildDialogLayout({
+      eyebrow: localize("scbr.dialog.title", "Sephral’s Content Backup & Restore"),
+      title: derived.title,
+      summary: derived.summary,
+      count: derived.filteredEntries.length,
+      sectionLabel: derived.sectionLabel,
+      sectionHint: localize("scbr.manager.sortHint", "Newest first, actions on the right."),
+      toolbarHtml: buildUnifiedToolbar(state),
+      rowsHtml: `
+        ${buildBackupRows(entries, { includeDocumentDetails: true, recoveryMode: true })}
+        <div class="scbr-empty-state scbr-filter-empty"${derived.filteredEntries.length ? " hidden" : ""}>
+          <div class="scbr-empty-icon"><i class="fas fa-box-open"></i></div>
+          <div class="scbr-empty-title">${escapeHtml(localize("scbr.manager.emptyTitle", "No backups yet"))}</div>
+          <p class="scbr-empty-copy">${escapeHtml(state.documentId
+            ? format("scbr.recovery.list.emptyDocument", { documentName: derived.selectedDocumentName }, `No backups exist for ${derived.selectedDocumentName}.`)
+            : format("scbr.recovery.list.empty", { documentType: derived.typeLabel }, `No backups exist for ${derived.typeLabel}.`))}</p>
+        </div>
+      `
+    });
+
+    const result = await waitForBackupDialog({
+      title: `${localize("scbr.dialog.title", "Sephral’s Content Backup & Restore")} - ${derived.title}`,
+      content,
+      dialogClass: "scbr-dialog scbr-document-dialog",
+      width: 1180,
+      height: 820,
+      onRender: (dialog) => {
+        const typeSelect = dialog.element.querySelector(".scbr-type-select");
+        const documentSelect = dialog.element.querySelector(".scbr-document-select");
+
+        typeSelect?.addEventListener("change", (event) => {
+          state.documentType = event.currentTarget.value;
+          state.documentId = "";
+          updateUnifiedDialogFilter(dialog, state, entries);
+        });
+
+        documentSelect?.addEventListener("change", (event) => {
+          state.documentId = event.currentTarget.value;
+          updateUnifiedDialogFilter(dialog, state, entries);
+        });
+
+        updateUnifiedDialogFilter(dialog, state, entries);
+      },
+      buttons: [
+        {
+          action: "backup",
+          label: localize("scbr.action.backup", "Create Backup"),
+          default: !!derived.selectedDocument
+        },
+        {
+          action: "cancel",
+          label: localize("scbr.action.cancel", "Cancel")
+        }
+      ]
+    });
+
+    const selectedDocument = getSelectedDocument(state.documentType, state.documentId);
+    if (result === "backup") {
+      if (!selectedDocument) {
+        ui.notifications.warn(localize("scbr.notification.selectDocument", "Select a live document before creating a backup."));
+        continue;
+      }
+      await runDocumentAction(selectedDocument, createBackup);
+      continue;
+    }
+
+    if (result?.action === "restore" && result.backupId) {
+      const entry = entries.find((currentEntry) => currentEntry.backup.id === result.backupId);
+      if (entry?.document) {
+        await runDocumentAction(entry.document, (currentDocument) => restoreBackup(currentDocument, result.backupId));
+      }
+      return;
+    }
+
+    if (result?.action === "reconstruct" && result.backupId) {
+      const entry = entries.find((currentEntry) => currentEntry.backup.id === result.backupId);
+      if (entry) {
+        await runRecoveryAction(() => reconstructDocumentFromBackup(entry.backup));
+      }
+      continue;
+    }
+
+    if (result?.action === "delete" && result.backupId) {
+      await runRecoveryAction(async () => {
+        const entry = entries.find((currentEntry) => currentEntry.backup.id === result.backupId);
+        if (entry) await removeBackupEntry(entry);
+      });
+      continue;
+    }
+
+    return;
+  }
+}
+
+function getManagerEntries() {
+  return getAllBackups().map((backup) => createEntryFromBackup(backup));
+}
+
+async function promptForRecoveryType() {
+  return getAllBackups()[0]?.documentType ?? SUPPORTED_DOCUMENTS[0]?.documentName ?? "Scene";
+}
+
+class BackupToolMenu extends foundry.applications.api.ApplicationV2 {
+  static DEFAULT_OPTIONS = {
+    id: `${MODULE_ID}-tool-menu`,
+    tag: "div",
+    position: {
+      width: 1,
+      height: 1
+    },
+    window: {
+      frame: false,
+      positioned: false,
+      minimizable: false
+    }
+  };
+
+  async _renderHTML() {
+    return document.createElement("div");
+  }
+
+  _replaceHTML(_result, _content) {}
+
+  async render() {
+    await openBackupToolDialog();
+    return this;
+  }
+}
+
+class BackupToolSettingsMenu extends foundry.applications.api.ApplicationV2 {
+  static DEFAULT_OPTIONS = {
+    id: `${MODULE_ID}-settings-menu`,
+    tag: "div",
+    position: {
+      width: 1,
+      height: 1
+    },
+    window: {
+      frame: false,
+      positioned: false,
+      minimizable: false
+    }
+  };
+
+  async _renderHTML() {
+    return document.createElement("div");
+  }
+
+  _replaceHTML(_result, _content) {}
+
+  async render() {
+    await openPreferencesDialog();
+    return this;
+  }
+}
+
+function createContextOption(documentName) {
+  return {
+    name: localize("scbr.context.label", "Sephral’s Content Backup & Restore"),
+    icon: '<i class="fas fa-box-archive"></i>',
+    condition: () => game.user.isGM,
+    callback: (target) => {
+      const documentId = getDocumentIdFromContext(target);
+      const document = getDocumentCollection(documentName)?.get(documentId);
+      if (!document) {
+        ui.notifications.error(localize("scbr.notification.documentMissing", "The selected document could not be found."));
+        return;
+      }
+
+      openBackupToolDialog({ document });
+    }
+  };
+}
+
+Hooks.once("init", () => {
+  console.log(`${MODULE_ID} | Initializing`);
+
+  for (const legacyModuleId of LEGACY_MODULE_IDS) {
+    game.settings.register(legacyModuleId, STORE_SETTING, {
+      scope: "world",
+      config: false,
+      type: Object,
+      default: {
+        version: BACKUP_STORAGE_VERSION,
+        backups: []
+      }
+    });
+  }
+
+  game.settings.register(MODULE_ID, STORE_SETTING, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      version: BACKUP_STORAGE_VERSION,
+      backups: []
+    }
+  });
+
+  game.settings.register(MODULE_ID, UI_LANGUAGE_SETTING, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: "default"
+  });
+
+  game.settings.register(MODULE_ID, UI_THEME_SETTING, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: "signature"
+  });
+
+  game.settings.registerMenu(MODULE_ID, "backupTool", {
+    name: localize("scbr.settings.tool.name", "Sephral’s Content Backup & Restore"),
+    label: localize("scbr.settings.tool.label", "Open SCBR"),
+    hint: localize("scbr.settings.tool.hint", "Open the unified backup dialog for all supported world documents."),
+    icon: "fas fa-box-archive",
+    type: BackupToolMenu,
+    restricted: true
+  });
+
+  game.settings.registerMenu(MODULE_ID, "uiPreferences", {
+    name: localize("scbr.settings.preferences.name", "Interface Settings"),
+    label: localize("scbr.settings.preferences.label", "Open Interface Settings"),
+    hint: localize("scbr.settings.preferences.hint", "Choose the language and design for this module UI."),
+    icon: "fas fa-sliders",
+    type: BackupToolSettingsMenu,
+    restricted: false
+  });
+});
+
+Hooks.once("ready", async () => {
+  await migrateLegacyBackups();
+});
+
+for (const config of SUPPORTED_DOCUMENTS) {
+  Hooks.on(`get${config.documentName}ContextOptions`, (_application, contextOptions) => {
+    contextOptions.push(createContextOption(config.documentName));
+  });
+}
