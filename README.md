@@ -2,6 +2,12 @@
 
 Sephral’s Content Backup & Restore creates, manages, deletes, and reconstructs backups for supported world documents in Foundry VTT 13 and 14.
 
+## Demo
+
+![SCBR demo](media/demo.gif)
+
+If the embedded preview is not available in your GitHub view, please check the media folder.
+
 ## Features
 
 - Named backups for scenes, actors, items, journal entries, playlists, macros, combats, roll tables, and cards
@@ -27,7 +33,6 @@ The module adds two menu entries to the module settings:
 ## Notes
 
 The module stores snapshots of document data. Restoring a backup resets the selected document to the exact state stored in that backup.
-
 
 ## License
 
