@@ -5,11 +5,13 @@ const UI_LANGUAGE_SETTING = "uiLanguage";
 const UI_THEME_SETTING = "uiTheme";
 const LEGACY_FLAG = "documentBackups";
 const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
-const BACKUP_STORAGE_VERSION = 4;
+const BACKUP_STORAGE_VERSION = 5;
 const SUPPORTED_UI_LANGUAGES = Object.freeze(["en", "de"]);
 const DEFAULT_UI_LANGUAGE = "en";
 const MODULE_TRANSLATION_CACHE = new Map();
 let MODULE_TRANSLATION_LOAD = null;
+const LEGACY_STORAGE_ROOT = `modules/${MODULE_ID}/storage`;
+const BACKUP_STORAGE_DIRECTORY = "scbr_backups";
 
 const SUPPORTED_DOCUMENTS = [
   { documentName: "Scene", getCollection: () => game.scenes },
@@ -179,6 +181,232 @@ function applyDialogTheme(element, theme=getThemePreference()) {
   element.classList.toggle("is-theme-signature", resolvedTheme !== "foundry");
 }
 
+function sanitizePathSegment(value, fallback="unknown") {
+  const normalized = String(value ?? "").trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return normalized || fallback;
+}
+
+function getWorldStorageRoot() {
+  // Backup payloads belong to the world, so keep them under the world's data tree.
+  return `worlds/${game.world.id}/${MODULE_ID}`;
+}
+
+function getStorageRoots() {
+  return [getWorldStorageRoot(), LEGACY_STORAGE_ROOT];
+}
+
+function normalizeStoragePath(path) {
+  const normalized = String(path ?? "").replace(/\\/g, "/").replace(/^\/+/, "");
+  for (const root of getStorageRoots()) {
+    const prefix = `${root}/`;
+    if (normalized.startsWith(prefix)) return normalized.slice(prefix.length);
+    if (normalized === root) return "";
+  }
+  return normalized;
+}
+
+function getBackupStorageDirectory(backup) {
+  return `${BACKUP_STORAGE_DIRECTORY}/${sanitizePathSegment(backup.documentType)}/${sanitizePathSegment(backup.documentId)}`;
+}
+
+function buildBackupStoragePath(backup) {
+  return `${getBackupStorageDirectory(backup)}/${sanitizePathSegment(backup.id, "backup")}.json`;
+}
+
+function sortBackups(backups) {
+  return [...backups]
+    .filter(Boolean)
+    .sort((left, right) => String(right?.createdAt ?? "").localeCompare(String(left?.createdAt ?? "")));
+}
+
+function getRootedStoragePath(path, root=getWorldStorageRoot()) {
+  return `${root}/${normalizeStoragePath(path)}`;
+}
+
+function getBackupFetchUrl(path, root=getWorldStorageRoot()) {
+  return getRootedStoragePath(path, root);
+}
+
+function getBackupFileName(path) {
+  const normalized = normalizeStoragePath(path);
+  const parts = normalized.split("/").filter(Boolean);
+  return parts.at(-1) ?? "backup.json";
+}
+
+function getBackupDirectoryPath(path) {
+  const normalized = normalizeStoragePath(path);
+  const parts = normalized.split("/").filter(Boolean);
+  parts.pop();
+  return parts.join("/");
+}
+
+function getStoredBackupPath(uploadedPath, fallbackPath) {
+  const normalizedUploadPath = normalizeStoragePath(uploadedPath);
+  if (normalizedUploadPath.includes("/")) return normalizedUploadPath;
+  return normalizeStoragePath(fallbackPath);
+}
+
+async function isStorageDirectoryEmpty(path, root=getWorldStorageRoot()) {
+  const target = getRootedStoragePath(path, root);
+  const result = await FilePicker.browse("data", target, {});
+  return (result?.dirs?.length ?? 0) === 0 && (result?.files?.length ?? 0) === 0;
+}
+
+async function pruneEmptyStorageDirectories(path, { root=getWorldStorageRoot(), stopAt=BACKUP_STORAGE_DIRECTORY } = {}) {
+  const normalized = normalizeStoragePath(path);
+  if (!normalized) return;
+
+  const segments = normalized.split("/").filter(Boolean);
+  if (segments.length < 1) return;
+
+  let current = segments.join("/");
+  while (current) {
+    const lastSegment = current.split("/").at(-1);
+    if (lastSegment === stopAt) break;
+
+    try {
+      if (!(await isStorageDirectoryEmpty(current, root))) break;
+      await FilePicker.delete("data", getRootedStoragePath(current, root), { notify: false });
+    } catch (error) {
+      const message = error?.message ?? String(error ?? "");
+      if (!/ENOENT|not found|does not exist/i.test(message)) {
+        console.warn(`${MODULE_ID} | Failed to prune storage directory '${getRootedStoragePath(current, root)}'`, error);
+      }
+      break;
+    }
+
+    const parentPath = getBackupDirectoryPath(current);
+    if (!parentPath || parentPath === current) break;
+    current = parentPath;
+  }
+}
+
+async function ensureStorageDirectoryExists(path) {
+  const filePicker = foundry.applications.apps.FilePicker.implementation;
+  const target = getRootedStoragePath(path);
+  const segments = target.split("/").filter(Boolean);
+  let currentPath = "";
+
+  for (const segment of segments) {
+    currentPath = currentPath ? `${currentPath}/${segment}` : segment;
+    try {
+      await filePicker.createDirectory("data", currentPath, { notify: false });
+    } catch (error) {
+      const message = error?.message ?? String(error ?? "");
+      if (!/EEXIST|already exists|FILES.ErrorCreateDirExists/i.test(message)) throw error;
+    }
+  }
+}
+
+async function writeBackupFile(backup, path=null) {
+  const resolvedPath = normalizeStoragePath(path ?? backup.path) || buildBackupStoragePath(backup);
+  await ensureStorageDirectoryExists(getBackupDirectoryPath(resolvedPath));
+
+  const payload = {
+    ...backup,
+    path: resolvedPath,
+    data: foundry.utils.deepClone(backup.data)
+  };
+
+  const file = new File([
+    JSON.stringify(payload, null, 2)
+  ], getBackupFileName(resolvedPath), {
+    type: "application/json",
+    lastModified: Date.now()
+  });
+
+  const response = await FilePicker.upload("data", getRootedStoragePath(getBackupDirectoryPath(resolvedPath)), file, {}, { notify: false });
+  if (!response?.path) {
+    throw new Error(`Failed to write backup file '${resolvedPath}'.`);
+  }
+
+  return normalizeBackup({ ...payload, path: getStoredBackupPath(response.path, resolvedPath) });
+}
+
+async function readBackupFile(backup, { includeSource=false } = {}) {
+  const path = normalizeStoragePath(backup?.path);
+  if (!path) {
+    throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
+  }
+
+  let payload = null;
+  let sourceRoot = null;
+
+  // Try the current world path first, then fall back to the legacy module storage path.
+  for (const root of getStorageRoots()) {
+    const response = await fetch(`${getBackupFetchUrl(path, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
+    if (!response.ok) continue;
+    payload = await response.json();
+    sourceRoot = root;
+    break;
+  }
+
+  if (!payload) {
+    throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
+  }
+
+  const normalized = normalizeBackup({ ...payload, path });
+  if (!normalized) {
+    throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
+  }
+
+  if (includeSource) {
+    return {
+      backup: normalized,
+      sourceRoot
+    };
+  }
+
+  return normalized;
+}
+
+async function deleteBackupFile(path, { storageRoots=null } = {}) {
+  const normalizedPath = normalizeStoragePath(path);
+  if (!normalizedPath) return;
+
+  const candidates = [globalThis.FilePicker, foundry.applications.apps.FilePicker?.implementation].filter(Boolean);
+  const roots = storageRoots ?? getStorageRoots();
+
+  for (const root of roots) {
+    const target = getRootedStoragePath(normalizedPath, root);
+
+    for (const candidate of candidates) {
+      if (typeof candidate.delete !== "function") continue;
+
+      try {
+        await candidate.delete("data", target, { notify: false });
+        await pruneEmptyStorageDirectories(getBackupDirectoryPath(normalizedPath), { root });
+        break;
+      } catch (error) {
+        const message = error?.message ?? String(error ?? "");
+        if (/ENOENT|not found|does not exist/i.test(message)) break;
+        console.warn(`${MODULE_ID} | Failed to delete backup file '${target}'`, error);
+        break;
+      }
+    }
+  }
+}
+
+function normalizeBackupIndex(backup) {
+  const path = normalizeStoragePath(backup?.path ?? backup?.filePath);
+  if (!path) return null;
+
+  return {
+    id: backup.id || foundry.utils.randomID(),
+    name: backup.name?.trim() || backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
+    documentId: backup.documentId || null,
+    documentName: backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
+    documentType: backup.documentType || null,
+    createdAt: backup.createdAt || new Date().toISOString(),
+    coreGeneration: backup.coreGeneration ?? null,
+    path
+  };
+}
+
 function normalizeBackup(backup) {
   if (!backup?.data || typeof backup.data !== "object") return null;
 
@@ -190,12 +418,17 @@ function normalizeBackup(backup) {
     documentType: backup.documentType || null,
     createdAt: backup.createdAt || new Date().toISOString(),
     coreGeneration: backup.coreGeneration ?? null,
+    path: normalizeStoragePath(backup.path ?? backup.filePath),
     data: foundry.utils.deepClone(backup.data)
   };
 }
 
+function getStoredBackupSetting(moduleId=MODULE_ID) {
+  return game.settings.get(moduleId, STORE_SETTING);
+}
+
 function getBackupStore() {
-  const stored = game.settings.get(MODULE_ID, STORE_SETTING);
+  const stored = getStoredBackupSetting(MODULE_ID);
   if (!stored || !Array.isArray(stored.backups)) {
     return {
       version: BACKUP_STORAGE_VERSION,
@@ -205,25 +438,49 @@ function getBackupStore() {
 
   return {
     version: stored.version ?? BACKUP_STORAGE_VERSION,
-    backups: stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean)
+    backups: stored.backups.map((backup) => normalizeBackupIndex(backup)).filter(Boolean)
   };
 }
 
-function getLegacyBackupStore(moduleId) {
-  const stored = game.settings.get(moduleId, STORE_SETTING);
+function getEmbeddedBackupsFromStore(moduleId=MODULE_ID) {
+  const stored = getStoredBackupSetting(moduleId);
   if (!stored || !Array.isArray(stored.backups)) return [];
   return stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean);
 }
 
+function getLegacyBackupStore(moduleId) {
+  const stored = getStoredBackupSetting(moduleId);
+  if (!stored || !Array.isArray(stored.backups)) return [];
+  return stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean);
+}
+
+async function clearBackupStore(moduleId) {
+  await game.settings.set(moduleId, STORE_SETTING, {
+    version: BACKUP_STORAGE_VERSION,
+    backups: []
+  });
+}
+
+async function unsetLegacyDocumentFlag(document, scope, key) {
+  try {
+    await document.unsetFlag(scope, key);
+  } catch (error) {
+    const message = error?.message ?? String(error ?? "");
+    if (/not valid or not currently active/i.test(message)) return;
+    throw error;
+  }
+}
+
 async function saveBackupStore(backups) {
+  const normalizedBackups = sortBackups(backups).map((backup) => normalizeBackupIndex(backup)).filter(Boolean);
   await game.settings.set(MODULE_ID, STORE_SETTING, {
     version: BACKUP_STORAGE_VERSION,
-    backups
+    backups: normalizedBackups
   });
 }
 
 function getAllBackups() {
-  return getBackupStore().backups.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt)));
+  return sortBackups(getBackupStore().backups);
 }
 
 function getBackups(document) {
@@ -238,7 +495,7 @@ function getBackupById(document, backupId) {
 async function setBackups(document, backups) {
   const documentType = getDocumentType(document);
   const remaining = getAllBackups().filter((backup) => !(backup.documentType === documentType && backup.documentId === document.id));
-  await saveBackupStore([...remaining, ...backups].sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))));
+  await saveBackupStore([...remaining, ...backups]);
 }
 
 function getLegacyBackups(document) {
@@ -276,17 +533,48 @@ function getLegacyBackups(document) {
 }
 
 async function migrateLegacyBackups() {
-  const existing = getAllBackups();
+  const embeddedBackups = getEmbeddedBackupsFromStore(MODULE_ID);
+  const indexedBackups = getAllBackups();
+  const existing = [];
+  const legacyStoresToClear = new Set();
+  let migratedIndexedBackups = false;
+  let migratedDocumentFlags = false;
+
+  // Re-home indexed files into the world storage root when they still point to legacy module storage.
+  for (const entry of indexedBackups) {
+    const resolved = await readBackupFile(entry, { includeSource: true });
+    const canonicalPath = buildBackupStoragePath(resolved.backup);
+    if (resolved.sourceRoot !== getWorldStorageRoot() || normalizeStoragePath(entry.path) !== canonicalPath) {
+      const rewritten = await writeBackupFile(resolved.backup, canonicalPath);
+      await deleteBackupFile(entry.path, { storageRoots: [resolved.sourceRoot] });
+      existing.push(normalizeBackupIndex(rewritten));
+      migratedIndexedBackups = true;
+    } else {
+      existing.push(entry);
+    }
+  }
   const seen = new Set(existing.map((backup) => `${backup.documentType}|${backup.documentId}|${backup.id}`));
   const merged = [...existing];
-  let changed = false;
+  let changed = embeddedBackups.length > 0 || migratedIndexedBackups;
+
+  for (const backup of embeddedBackups) {
+    const key = `${backup.documentType}|${backup.documentId}|${backup.id}`;
+    if (seen.has(key)) continue;
+    const persisted = await writeBackupFile(backup);
+    seen.add(key);
+    merged.push(normalizeBackupIndex(persisted));
+  }
 
   for (const legacyModuleId of LEGACY_MODULE_IDS) {
-    for (const backup of getLegacyBackupStore(legacyModuleId)) {
+    const legacyStoreBackups = getLegacyBackupStore(legacyModuleId);
+    if (legacyStoreBackups.length) legacyStoresToClear.add(legacyModuleId);
+
+    for (const backup of legacyStoreBackups) {
       const key = `${backup.documentType}|${backup.documentId}|${backup.id}`;
       if (seen.has(key)) continue;
+      const persisted = await writeBackupFile(backup);
       seen.add(key);
-      merged.push(backup);
+      merged.push(normalizeBackupIndex(persisted));
       changed = true;
     }
   }
@@ -299,22 +587,30 @@ async function migrateLegacyBackups() {
       for (const backup of legacyBackups) {
         const key = `${backup.documentType}|${backup.documentId}|${backup.id}`;
         if (seen.has(key)) continue;
+        const persisted = await writeBackupFile(backup);
         seen.add(key);
-        merged.push(backup);
+        merged.push(normalizeBackupIndex(persisted));
         changed = true;
       }
 
-      for (const namespace of LEGACY_MODULE_IDS) {
-        await document.unsetFlag(namespace, LEGACY_FLAG);
+      for (const namespace of [MODULE_ID, ...LEGACY_MODULE_IDS]) {
+        await unsetLegacyDocumentFlag(document, namespace, LEGACY_FLAG);
         if (config.documentName === "Scene") {
-          await document.unsetFlag(namespace, LEGACY_SCENE_BACKUP_FLAG);
+          await unsetLegacyDocumentFlag(document, namespace, LEGACY_SCENE_BACKUP_FLAG);
         }
       }
+      migratedDocumentFlags = true;
     }
   }
 
   if (changed) {
-    await saveBackupStore(merged.sort((left, right) => String(right.createdAt).localeCompare(String(left.createdAt))));
+    await saveBackupStore(merged);
+  }
+
+  if (migratedDocumentFlags || legacyStoresToClear.size) {
+    for (const legacyModuleId of legacyStoresToClear) {
+      await clearBackupStore(legacyModuleId);
+    }
   }
 }
 
@@ -461,22 +757,24 @@ async function createBackup(document) {
 
   const backups = getBackups(document);
   const payload = buildBackupPayload(document, name);
-  backups.unshift(payload);
+  const storedBackup = await writeBackupFile(payload);
+  backups.unshift(normalizeBackupIndex(storedBackup));
 
   await setBackups(document, backups);
   ui.notifications.info(format("scbr.notification.backupCreated", {
-    backupName: formatBackupLabel(payload),
+    backupName: formatBackupLabel(storedBackup),
     documentName: getDocumentDisplayName(document)
-  }, `Backup '${formatBackupLabel(payload)}' created for '${getDocumentDisplayName(document)}'.`));
+  }, `Backup '${formatBackupLabel(storedBackup)}' created for '${getDocumentDisplayName(document)}'.`));
 }
 
 async function restoreBackup(document, backupId) {
-  const backup = getBackupById(document, backupId);
-  if (!backup) {
+  const backupIndex = getBackupById(document, backupId);
+  if (!backupIndex) {
     ui.notifications.warn(format("scbr.notification.noBackup", { documentName: getDocumentDisplayName(document) }, `No backup exists for '${getDocumentDisplayName(document)}'.`));
     return;
   }
 
+  const backup = await readBackupFile(backupIndex);
   const restoreData = buildRestoreData(document, backup);
   await document.update(restoreData, { diff: false, recursive: false });
 
@@ -491,40 +789,49 @@ async function restoreBackup(document, backupId) {
 }
 
 async function reconstructDocumentFromBackup(backup) {
-  const collection = getDocumentCollection(backup.documentType);
+  const storedBackup = await readBackupFile(backup);
+  const collection = getDocumentCollection(storedBackup.documentType);
   if (!collection?.documentClass) {
-    throw new Error(format("scbr.notification.unsupportedRecovery", { documentType: getDocumentTypeLabel(backup.documentType) }, `Recovery is not supported for '${getDocumentTypeLabel(backup.documentType)}'.`));
+    throw new Error(format("scbr.notification.unsupportedRecovery", { documentType: getDocumentTypeLabel(storedBackup.documentType) }, `Recovery is not supported for '${getDocumentTypeLabel(storedBackup.documentType)}'.`));
   }
 
-  const createData = buildReconstructionData(backup);
+  const createData = buildReconstructionData(storedBackup);
   const created = await collection.documentClass.create(createData, { renderSheet: true });
   if (!created) return null;
 
-  const updatedBackups = getAllBackups().map((entry) => {
-    if (entry.documentType !== backup.documentType || entry.documentId !== backup.documentId) return entry;
-    return {
-      ...entry,
+  const updatedBackups = [];
+  for (const entry of getAllBackups()) {
+    if (entry.documentType !== storedBackup.documentType || entry.documentId !== storedBackup.documentId) {
+      updatedBackups.push(entry);
+      continue;
+    }
+
+    const record = await readBackupFile(entry);
+    const rewritten = await writeBackupFile({
+      ...record,
       documentId: created.id,
       documentName: getDocumentDisplayName(created),
       data: {
-        ...foundry.utils.deepClone(entry.data),
+        ...foundry.utils.deepClone(record.data),
         _id: created.id,
         name: getDocumentDisplayName(created)
       }
-    };
-  });
+    }, entry.path);
+    updatedBackups.push(normalizeBackupIndex(rewritten));
+  }
   await saveBackupStore(updatedBackups);
 
   ui.notifications.info(format("scbr.notification.reconstructed", {
     documentName: getDocumentDisplayName(created),
-    backupName: formatBackupLabel(backup)
-  }, `Reconstructed '${getDocumentDisplayName(created)}' from backup '${formatBackupLabel(backup)}'.`));
+    backupName: formatBackupLabel(storedBackup)
+  }, `Reconstructed '${getDocumentDisplayName(created)}' from backup '${formatBackupLabel(storedBackup)}'.`));
 
   return created;
 }
 
 async function removeBackupByEntry(backup) {
   const remaining = getAllBackups().filter((entry) => entry.id !== backup.id);
+  await deleteBackupFile(backup.path);
   await saveBackupStore(remaining);
 }
 
