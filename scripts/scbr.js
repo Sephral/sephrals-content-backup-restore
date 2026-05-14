@@ -1,17 +1,20 @@
 const MODULE_ID = "sephrals-content-backup-restore";
 const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
 const STORE_SETTING = "backupStore";
+const STORE_LOCK_SETTING = "backupStoreLock";
 const UI_LANGUAGE_SETTING = "uiLanguage";
 const UI_THEME_SETTING = "uiTheme";
 const LEGACY_FLAG = "documentBackups";
 const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
-const BACKUP_STORAGE_VERSION = 5;
+const BACKUP_STORAGE_VERSION = 6;
 const SUPPORTED_UI_LANGUAGES = Object.freeze(["en", "de"]);
 const DEFAULT_UI_LANGUAGE = "en";
 const MODULE_TRANSLATION_CACHE = new Map();
 let MODULE_TRANSLATION_LOAD = null;
 const LEGACY_STORAGE_ROOT = `modules/${MODULE_ID}/storage`;
-const BACKUP_STORAGE_DIRECTORY = "scbr_backups";
+const WORLD_STORAGE_ROOT = "scbr";
+const BACKUP_LOCK_TIMEOUT_MS = 8000;
+const BACKUP_LOCK_RETRY_MS = 120;
 
 const SUPPORTED_DOCUMENTS = [
   { documentName: "Scene", getCollection: () => game.scenes },
@@ -192,11 +195,15 @@ function sanitizePathSegment(value, fallback="unknown") {
 
 function getWorldStorageRoot() {
   // Backup payloads belong to the world, so keep them under the world's data tree.
+  return `worlds/${game.world.id}/${WORLD_STORAGE_ROOT}`;
+}
+
+function getLegacyWorldStorageRoot() {
   return `worlds/${game.world.id}/${MODULE_ID}`;
 }
 
 function getStorageRoots() {
-  return [getWorldStorageRoot(), LEGACY_STORAGE_ROOT];
+  return [getWorldStorageRoot(), getLegacyWorldStorageRoot(), LEGACY_STORAGE_ROOT];
 }
 
 function normalizeStoragePath(path) {
@@ -209,12 +216,31 @@ function normalizeStoragePath(path) {
   return normalized;
 }
 
-function getBackupStorageDirectory(backup) {
-  return `${BACKUP_STORAGE_DIRECTORY}/${sanitizePathSegment(backup.documentType)}/${sanitizePathSegment(backup.documentId)}`;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getDocumentTypeStoragePath(documentType) {
+  return `${sanitizePathSegment(documentType, "Document")}.json`;
+}
+
+function parseBackupPath(path, backupId=null, documentType=null) {
+  const normalized = normalizeStoragePath(path);
+  const [filePart, hashPart] = normalized.split("#", 2);
+  const filePath = filePart || getDocumentTypeStoragePath(documentType);
+  const resolvedBackupId = hashPart || backupId || null;
+  const resolvedType = documentType || filePath.replace(/\.json$/i, "") || null;
+  return {
+    normalized,
+    filePath,
+    backupId: resolvedBackupId,
+    documentType: resolvedType
+  };
 }
 
 function buildBackupStoragePath(backup) {
-  return `${getBackupStorageDirectory(backup)}/${sanitizePathSegment(backup.id, "backup")}.json`;
+  const filePath = getDocumentTypeStoragePath(backup.documentType);
+  return `${filePath}#${sanitizePathSegment(backup.id, "backup")}`;
 }
 
 function sortBackups(backups) {
@@ -232,56 +258,67 @@ function getBackupFetchUrl(path, root=getWorldStorageRoot()) {
 }
 
 function getBackupFileName(path) {
-  const normalized = normalizeStoragePath(path);
-  const parts = normalized.split("/").filter(Boolean);
+  const { filePath } = parseBackupPath(path);
+  const parts = normalizeStoragePath(filePath).split("/").filter(Boolean);
   return parts.at(-1) ?? "backup.json";
 }
 
 function getBackupDirectoryPath(path) {
-  const normalized = normalizeStoragePath(path);
-  const parts = normalized.split("/").filter(Boolean);
+  const { filePath } = parseBackupPath(path);
+  const parts = normalizeStoragePath(filePath).split("/").filter(Boolean);
   parts.pop();
   return parts.join("/");
 }
 
-function getStoredBackupPath(uploadedPath, fallbackPath) {
-  const normalizedUploadPath = normalizeStoragePath(uploadedPath);
-  if (normalizedUploadPath.includes("/")) return normalizedUploadPath;
-  return normalizeStoragePath(fallbackPath);
-}
+async function acquireBackupStoreLock({ timeoutMs=BACKUP_LOCK_TIMEOUT_MS, retryMs=BACKUP_LOCK_RETRY_MS } = {}) {
+  const token = `${game.user.id}-${foundry.utils.randomID()}`;
+  const deadline = Date.now() + timeoutMs;
 
-async function isStorageDirectoryEmpty(path, root=getWorldStorageRoot()) {
-  const target = getRootedStoragePath(path, root);
-  const result = await FilePicker.browse("data", target, {});
-  return (result?.dirs?.length ?? 0) === 0 && (result?.files?.length ?? 0) === 0;
-}
+  while (Date.now() < deadline) {
+    const current = game.settings.get(MODULE_ID, STORE_LOCK_SETTING);
+    const expiresAt = Number(current?.expiresAt ?? 0);
+    const active = current?.token && expiresAt > Date.now() && current.owner !== game.user.id;
 
-async function pruneEmptyStorageDirectories(path, { root=getWorldStorageRoot(), stopAt=BACKUP_STORAGE_DIRECTORY } = {}) {
-  const normalized = normalizeStoragePath(path);
-  if (!normalized) return;
-
-  const segments = normalized.split("/").filter(Boolean);
-  if (segments.length < 1) return;
-
-  let current = segments.join("/");
-  while (current) {
-    const lastSegment = current.split("/").at(-1);
-    if (lastSegment === stopAt) break;
-
-    try {
-      if (!(await isStorageDirectoryEmpty(current, root))) break;
-      await FilePicker.delete("data", getRootedStoragePath(current, root), { notify: false });
-    } catch (error) {
-      const message = error?.message ?? String(error ?? "");
-      if (!/ENOENT|not found|does not exist/i.test(message)) {
-        console.warn(`${MODULE_ID} | Failed to prune storage directory '${getRootedStoragePath(current, root)}'`, error);
-      }
-      break;
+    if (active) {
+      await sleep(retryMs);
+      continue;
     }
 
-    const parentPath = getBackupDirectoryPath(current);
-    if (!parentPath || parentPath === current) break;
-    current = parentPath;
+    const candidate = {
+      token,
+      owner: game.user.id,
+      expiresAt: Date.now() + timeoutMs,
+      acquiredAt: new Date().toISOString()
+    };
+
+    await game.settings.set(MODULE_ID, STORE_LOCK_SETTING, candidate);
+    const written = game.settings.get(MODULE_ID, STORE_LOCK_SETTING);
+    if (written?.token === token) return token;
+
+    await sleep(retryMs);
+  }
+
+  throw new Error("Timed out while waiting for backup storage lock.");
+}
+
+async function releaseBackupStoreLock(token) {
+  const current = game.settings.get(MODULE_ID, STORE_LOCK_SETTING);
+  if (current?.token !== token) return;
+
+  await game.settings.set(MODULE_ID, STORE_LOCK_SETTING, {
+    token: null,
+    owner: null,
+    expiresAt: 0,
+    acquiredAt: null
+  });
+}
+
+async function withBackupStoreLock(fn, options={}) {
+  const token = await acquireBackupStoreLock(options);
+  try {
+    return await fn();
+  } finally {
+    await releaseBackupStoreLock(token);
   }
 }
 
@@ -303,44 +340,85 @@ async function ensureStorageDirectoryExists(path) {
 }
 
 async function writeBackupFile(backup, path=null) {
-  const resolvedPath = normalizeStoragePath(path ?? backup.path) || buildBackupStoragePath(backup);
-  await ensureStorageDirectoryExists(getBackupDirectoryPath(resolvedPath));
+  return withBackupStoreLock(async () => {
+    const resolvedPath = normalizeStoragePath(path ?? backup.path) || buildBackupStoragePath(backup);
+    const parsedPath = parseBackupPath(resolvedPath, backup?.id, backup?.documentType);
+    await ensureStorageDirectoryExists(getBackupDirectoryPath(parsedPath.filePath));
 
-  const payload = {
-    ...backup,
-    path: resolvedPath,
-    data: foundry.utils.deepClone(backup.data)
-  };
+    let store = { version: BACKUP_STORAGE_VERSION, documentType: parsedPath.documentType, backups: [] };
+    for (const root of getStorageRoots()) {
+      const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
+      if (!response.ok) continue;
+      const loaded = await response.json();
+      if (Array.isArray(loaded?.backups)) {
+        store = {
+          version: loaded.version ?? BACKUP_STORAGE_VERSION,
+          documentType: loaded.documentType ?? parsedPath.documentType,
+          backups: loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean)
+        };
+      }
+      break;
+    }
 
-  const file = new File([
-    JSON.stringify(payload, null, 2)
-  ], getBackupFileName(resolvedPath), {
-    type: "application/json",
-    lastModified: Date.now()
+    const payload = {
+      ...backup,
+      path: resolvedPath,
+      data: foundry.utils.deepClone(backup.data)
+    };
+
+    const backupId = parsedPath.backupId || payload.id;
+    if (!backupId) throw new Error("Cannot persist backup without an id.");
+
+    const nextBackups = sortBackups([
+      ...store.backups.filter((entry) => entry.id !== backupId),
+      { ...payload, id: backupId, documentType: parsedPath.documentType, path: `${parsedPath.filePath}#${backupId}` }
+    ]);
+
+    const serializedStore = {
+      version: BACKUP_STORAGE_VERSION,
+      documentType: parsedPath.documentType,
+      backups: nextBackups
+    };
+
+    const file = new File([
+      JSON.stringify(serializedStore, null, 2)
+    ], getBackupFileName(parsedPath.filePath), {
+      type: "application/json",
+      lastModified: Date.now()
+    });
+
+    const response = await FilePicker.upload("data", getRootedStoragePath(getBackupDirectoryPath(parsedPath.filePath)), file, {}, { notify: false });
+    if (!response?.path) {
+      throw new Error(`Failed to write backup file '${parsedPath.filePath}'.`);
+    }
+
+    return normalizeBackup({ ...payload, id: backupId, documentType: parsedPath.documentType, path: `${parsedPath.filePath}#${backupId}` });
   });
-
-  const response = await FilePicker.upload("data", getRootedStoragePath(getBackupDirectoryPath(resolvedPath)), file, {}, { notify: false });
-  if (!response?.path) {
-    throw new Error(`Failed to write backup file '${resolvedPath}'.`);
-  }
-
-  return normalizeBackup({ ...payload, path: getStoredBackupPath(response.path, resolvedPath) });
 }
 
 async function readBackupFile(backup, { includeSource=false } = {}) {
   const path = normalizeStoragePath(backup?.path);
-  if (!path) {
+  if (!path && !backup?.id) {
+    throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
+  }
+
+  const parsedPath = parseBackupPath(path, backup?.id, backup?.documentType);
+  if (!parsedPath.filePath || !parsedPath.backupId) {
     throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
   }
 
   let payload = null;
   let sourceRoot = null;
 
-  // Try the current world path first, then fall back to the legacy module storage path.
   for (const root of getStorageRoots()) {
-    const response = await fetch(`${getBackupFetchUrl(path, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
+    const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
     if (!response.ok) continue;
-    payload = await response.json();
+    const loaded = await response.json();
+    const backups = Array.isArray(loaded?.backups)
+      ? loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean)
+      : [];
+    payload = backups.find((entry) => entry.id === parsedPath.backupId) ?? null;
+    if (!payload) continue;
     sourceRoot = root;
     break;
   }
@@ -349,7 +427,7 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
     throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
   }
 
-  const normalized = normalizeBackup({ ...payload, path });
+  const normalized = normalizeBackup({ ...payload, path: `${parsedPath.filePath}#${parsedPath.backupId}` });
   if (!normalized) {
     throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
   }
@@ -365,30 +443,52 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
 }
 
 async function deleteBackupFile(path, { storageRoots=null } = {}) {
-  const normalizedPath = normalizeStoragePath(path);
-  if (!normalizedPath) return;
+  return withBackupStoreLock(async () => {
+    const normalizedPath = normalizeStoragePath(path);
+    if (!normalizedPath) return { deleted: false, unsupported: false };
 
-  const candidates = [globalThis.FilePicker, foundry.applications.apps.FilePicker?.implementation].filter(Boolean);
-  const roots = storageRoots ?? getStorageRoots();
+    const parsedPath = parseBackupPath(normalizedPath);
+    if (!parsedPath.filePath || !parsedPath.backupId) return { deleted: false, unsupported: false };
 
-  for (const root of roots) {
-    const target = getRootedStoragePath(normalizedPath, root);
+    const roots = storageRoots ?? getStorageRoots();
+    let deleted = false;
 
-    for (const candidate of candidates) {
-      if (typeof candidate.delete !== "function") continue;
+    for (const root of roots) {
+      const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
+      if (!response.ok) continue;
 
-      try {
-        await candidate.delete("data", target, { notify: false });
-        await pruneEmptyStorageDirectories(getBackupDirectoryPath(normalizedPath), { root });
-        break;
-      } catch (error) {
-        const message = error?.message ?? String(error ?? "");
-        if (/ENOENT|not found|does not exist/i.test(message)) break;
-        console.warn(`${MODULE_ID} | Failed to delete backup file '${target}'`, error);
-        break;
+      const loaded = await response.json();
+      const currentBackups = Array.isArray(loaded?.backups)
+        ? loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean)
+        : [];
+      const nextBackups = currentBackups.filter((entry) => entry.id !== parsedPath.backupId);
+      if (nextBackups.length === currentBackups.length) continue;
+
+      await ensureStorageDirectoryExists(getBackupDirectoryPath(parsedPath.filePath));
+
+      const serializedStore = {
+        version: BACKUP_STORAGE_VERSION,
+        documentType: loaded?.documentType ?? parsedPath.documentType,
+        backups: nextBackups
+      };
+
+      const file = new File([
+        JSON.stringify(serializedStore, null, 2)
+      ], getBackupFileName(parsedPath.filePath), {
+        type: "application/json",
+        lastModified: Date.now()
+      });
+
+      const upload = await FilePicker.upload("data", getRootedStoragePath(getBackupDirectoryPath(parsedPath.filePath)), file, {}, { notify: false });
+      if (!upload?.path) {
+        throw new Error(`Failed to update backup file '${parsedPath.filePath}'.`);
       }
+      deleted = true;
+      break;
     }
-  }
+
+    return { deleted, unsupported: false };
+  });
 }
 
 function normalizeBackupIndex(backup) {
@@ -454,10 +554,41 @@ function getLegacyBackupStore(moduleId) {
   return stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean);
 }
 
+async function collectBackupsFromTypeFiles() {
+  const collected = [];
+
+  for (const config of SUPPORTED_DOCUMENTS) {
+    const filePath = getDocumentTypeStoragePath(config.documentName);
+    const response = await fetch(`${getBackupFetchUrl(filePath, getWorldStorageRoot())}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
+    if (!response.ok) continue;
+
+    const loaded = await response.json();
+    if (!Array.isArray(loaded?.backups)) continue;
+
+    for (const raw of loaded.backups) {
+      const normalized = normalizeBackup({ ...raw, documentType: raw.documentType || config.documentName });
+      if (!normalized) continue;
+      collected.push(normalizeBackupIndex({ ...normalized, path: `${filePath}#${normalized.id}` }));
+    }
+  }
+
+  return sortBackups(collected).filter(Boolean);
+}
+
 async function clearBackupStore(moduleId) {
-  await game.settings.set(moduleId, STORE_SETTING, {
-    version: BACKUP_STORAGE_VERSION,
-    backups: []
+  if (moduleId !== MODULE_ID) {
+    await game.settings.set(moduleId, STORE_SETTING, {
+      version: BACKUP_STORAGE_VERSION,
+      backups: []
+    });
+    return;
+  }
+
+  await withBackupStoreLock(async () => {
+    await game.settings.set(moduleId, STORE_SETTING, {
+      version: BACKUP_STORAGE_VERSION,
+      backups: []
+    });
   });
 }
 
@@ -472,10 +603,15 @@ async function unsetLegacyDocumentFlag(document, scope, key) {
 }
 
 async function saveBackupStore(backups) {
-  const normalizedBackups = sortBackups(backups).map((backup) => normalizeBackupIndex(backup)).filter(Boolean);
-  await game.settings.set(MODULE_ID, STORE_SETTING, {
-    version: BACKUP_STORAGE_VERSION,
-    backups: normalizedBackups
+  await withBackupStoreLock(async () => {
+    const indexedFromFiles = await collectBackupsFromTypeFiles();
+    const fallbackIndex = sortBackups(backups ?? []).map((backup) => normalizeBackupIndex(backup)).filter(Boolean);
+    const normalizedBackups = indexedFromFiles.length ? indexedFromFiles : fallbackIndex;
+
+    await game.settings.set(MODULE_ID, STORE_SETTING, {
+      version: BACKUP_STORAGE_VERSION,
+      backups: normalizedBackups
+    });
   });
 }
 
@@ -831,8 +967,14 @@ async function reconstructDocumentFromBackup(backup) {
 
 async function removeBackupByEntry(backup) {
   const remaining = getAllBackups().filter((entry) => entry.id !== backup.id);
-  await deleteBackupFile(backup.path);
+  const deletion = await deleteBackupFile(backup.path);
   await saveBackupStore(remaining);
+
+  if (deletion?.unsupported) {
+    ui.notifications.warn(format("scbr.notification.fileDeleteUnsupported", {
+      filePath: getRootedStoragePath(normalizeStoragePath(backup.path))
+    }, "Backup metadata was removed, but Foundry does not provide a file-delete API in this runtime. Remove the payload file manually: {filePath}"));
+  }
 }
 
 async function removeBackup(document, backupId) {
@@ -980,8 +1122,17 @@ function getDocumentPickerOptions(documentType, selectedDocumentId, preferredDoc
 }
 
 function buildRecoveryTypeOptions(selectedType) {
-  return SUPPORTED_DOCUMENTS.map((config) => {
-    const count = getAllBackups().filter((backup) => backup.documentType === config.documentName).length;
+  const counts = new Map();
+  for (const backup of getAllBackups()) {
+    counts.set(backup.documentType, (counts.get(backup.documentType) ?? 0) + 1);
+  }
+
+  const visibleConfigs = SUPPORTED_DOCUMENTS.filter((config) => (counts.get(config.documentName) ?? 0) > 0);
+  const fallbackConfig = SUPPORTED_DOCUMENTS.find((config) => config.documentName === selectedType) ?? SUPPORTED_DOCUMENTS[0] ?? null;
+  const configs = visibleConfigs.length ? visibleConfigs : (fallbackConfig ? [fallbackConfig] : []);
+
+  return configs.map((config) => {
+    const count = counts.get(config.documentName) ?? 0;
     const selected = config.documentName === selectedType ? " selected" : "";
     return `<option value="${escapeHtml(config.documentName)}"${selected}>${escapeHtml(`${getDocumentTypeLabel(config.documentName)} (${count})`)}</option>`;
   }).join("");
@@ -1599,6 +1750,18 @@ Hooks.once("init", () => {
     default: {
       version: BACKUP_STORAGE_VERSION,
       backups: []
+    }
+  });
+
+  game.settings.register(MODULE_ID, STORE_LOCK_SETTING, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: {
+      token: null,
+      owner: null,
+      expiresAt: 0,
+      acquiredAt: null
     }
   });
 
