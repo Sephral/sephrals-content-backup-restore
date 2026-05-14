@@ -1,6 +1,6 @@
 # Sephral’s Content Backup & Restore
 
-Sephral’s Content Backup & Restore creates, manages, deletes, and reconstructs backups for supported world documents in Foundry VTT 13 and 14.
+Sephral’s Content Backup & Restore creates, manages, deletes, and reconstructs backups for supported world documents in FoundryVTT.
 
 ## Demo
 
@@ -10,12 +10,13 @@ If the embedded preview is not available in your GitHub view, please check the m
 
 ## Features
 
-- Named backups for scenes, actors, items, journal entries, playlists, macros, combats, roll tables, and cards
+- Named backups for scenes, actors, items, journal entries, playlists, macros, roll tables, and cards
 - Restore existing documents from a selected backup
 - Recovery view for deleted documents when matching backups are available
 - Central module interface for backup management and recovery
 - Context menu entry on supported documents for quick access
 - Client-side interface settings for language and design
+- World-scoped backup payload files with a slim metadata index in module settings
 
 ## Usage
 
@@ -23,16 +24,14 @@ If the embedded preview is not available in your GitHub view, please check the m
 2. Open the context menu on any supported document, or launch `Open SCBR` from the module settings.
 3. Create, restore, delete, or reconstruct backups from the unified interface.
 
-## Settings
+## Storage and migration
 
-The module adds two menu entries to the module settings:
-
-- `Open SCBR` for the central backup interface
-- `Open Interface Settings` for language and design preferences
-
-## Notes
-
-The module stores snapshots of document data. Restoring a backup resets the selected document to the exact state stored in that backup.
+- Backup payloads are stored in world data under:
+  `worlds/<world-id>/scbr/<DocumentType>.json`
+  Each type file contains all backups for that document type.
+- The world setting `sephrals-content-backup-restore.backupStore` stores only backup metadata (index), not full document payloads.
+- Backup writes are serialized with a world lock so two GMs cannot save conflicting changes at the same time.
+- Legacy data is migrated on startup.
 
 ## License
 
