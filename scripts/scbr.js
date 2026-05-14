@@ -414,10 +414,13 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
     const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
     if (!response.ok) continue;
     const loaded = await response.json();
-    const backups = Array.isArray(loaded?.backups)
-      ? loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean)
-      : [];
-    payload = backups.find((entry) => entry.id === parsedPath.backupId) ?? null;
+
+    // Storage format: one file per document type with a backups array.
+    if (Array.isArray(loaded?.backups)) {
+      const backups = loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean);
+      payload = backups.find((entry) => entry.id === parsedPath.backupId) ?? null;
+    }
+
     if (!payload) continue;
     sourceRoot = root;
     break;
@@ -682,7 +685,7 @@ async function migrateLegacyBackups() {
     const canonicalPath = buildBackupStoragePath(resolved.backup);
     if (resolved.sourceRoot !== getWorldStorageRoot() || normalizeStoragePath(entry.path) !== canonicalPath) {
       const rewritten = await writeBackupFile(resolved.backup, canonicalPath);
-      await deleteBackupFile(entry.path, { storageRoots: [resolved.sourceRoot] });
+      await deleteBackupFile(resolved.backup.path || entry.path, { storageRoots: [resolved.sourceRoot] });
       existing.push(normalizeBackupIndex(rewritten));
       migratedIndexedBackups = true;
     } else {
