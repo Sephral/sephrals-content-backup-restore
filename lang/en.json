@@ -64,6 +64,7 @@
   "scbr.notification.invalidBackup": "The stored backup for '{documentName}' is invalid.",
   "scbr.notification.documentMissing": "The selected document could not be found.",
   "scbr.notification.selectDocument": "Select a live document before creating a backup.",
+  "scbr.notification.fileDeleteUnsupported": "Backup metadata was removed, but Foundry does not provide a file-delete API in this runtime. Remove the payload file manually: {filePath}",
   "scbr.notification.unsupportedRecovery": "Recovery is not supported for '{documentType}'.",
   "scbr.notification.error": "Sephral’s Content Backup & Restore failed: {message}"
 }

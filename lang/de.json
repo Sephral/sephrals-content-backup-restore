@@ -64,6 +64,7 @@
   "scbr.notification.invalidBackup": "Das gespeicherte Backup für '{documentName}' ist ungültig.",
   "scbr.notification.documentMissing": "Das ausgewählte Element wurde nicht gefunden.",
   "scbr.notification.selectDocument": "Wähle ein vorhandenes Dokument aus, bevor Du ein Backup erstellst.",
+  "scbr.notification.fileDeleteUnsupported": "Die Backup-Metadaten wurden entfernt, aber Foundry stellt in dieser Laufzeit keine API zum Löschen von Dateien bereit. Entferne die Backup-Datei manuell: {filePath}",
   "scbr.notification.unsupportedRecovery": "Wiederherstellung wird für '{documentType}' nicht unterstützt.",
   "scbr.notification.error": "Sephral’s Content Backup & Restore fehlgeschlagen: {message}"
 }
