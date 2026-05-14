@@ -6,296 +6,10 @@ const UI_THEME_SETTING = "uiTheme";
 const LEGACY_FLAG = "documentBackups";
 const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
 const BACKUP_STORAGE_VERSION = 4;
-
-const MODULE_TRANSLATIONS = {
-  en: {
-    "scbr.context.label": "Sephral’s Content Backup & Restore",
-    "scbr.action.backup": "Create Backup",
-    "scbr.action.remove": "Delete Backup",
-    "scbr.action.cancel": "Cancel",
-    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
-    "scbr.dialog.summary.latest": "Latest backup: {latest}.",
-    "scbr.dialog.summary.noneShort": "Create the first backup for this document.",
-    "scbr.dialog.create.title": "Create Backup",
-    "scbr.dialog.create.summary": "Create a new backup for {documentName}.",
-    "scbr.dialog.create.nameLabel": "Backup name",
-    "scbr.dialog.create.hint": "The current date and time are stored automatically.",
-    "scbr.dialog.create.submit": "Create Backup",
-    "scbr.dialog.deleteConfirm.title": "Delete Backup",
-    "scbr.dialog.deleteConfirm.body": "Delete backup '{backupName}' from '{documentName}'?",
-    "scbr.dialog.deleteConfirm.confirm": "Delete",
-    "scbr.manager.empty": "No document backups are available yet.",
-    "scbr.manager.selectionLabel": "Saved backups",
-    "scbr.manager.hint": "Choose a backup to restore it or delete it.",
-    "scbr.manager.sortHint": "Newest first, actions on the right.",
-    "scbr.manager.countLabel": "Backups",
-    "scbr.manager.emptyTitle": "No backups yet",
-    "scbr.manager.available": "Available",
-    "scbr.manager.restore": "Restore Backup",
-    "scbr.manager.reconstruct": "Reconstruct Document",
-    "scbr.manager.missing": "[deleted]",
-    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
-    "scbr.settings.tool.label": "Open SCBR",
-    "scbr.settings.tool.hint": "Open the unified backup dialog for all supported world documents.",
-    "scbr.settings.preferences.name": "Interface Settings",
-    "scbr.settings.preferences.label": "Open Interface Settings",
-    "scbr.settings.preferences.hint": "Choose the language and design for this module UI.",
-    "scbr.settings.preferences.title": "Interface Settings",
-    "scbr.settings.preferences.summary": "Adjust how Sephral’s Content Backup & Restore looks and which module language it uses.",
-    "scbr.settings.preferences.section": "Display options",
-    "scbr.settings.preferences.sectionHint": "These preferences are stored per user and apply to the module UI.",
-    "scbr.settings.language.label": "Language",
-    "scbr.settings.language.hint": "Use the Foundry language or force this module to one of the supported module languages.",
-    "scbr.settings.language.default": "Follow Foundry",
-    "scbr.settings.language.en": "English",
-    "scbr.settings.language.de": "Deutsch",
-    "scbr.settings.language.fr": "Francais",
-    "scbr.settings.language.es": "Espanol",
-    "scbr.settings.theme.label": "Design",
-    "scbr.settings.theme.hint": "Switch between the current signature look and a Foundry-style default layout.",
-    "scbr.settings.theme.signature": "Signature",
-    "scbr.settings.theme.foundry": "Foundry Default",
-    "scbr.settings.save": "Save Settings",
-    "scbr.settings.saved": "Interface settings updated.",
-    "scbr.filter.document.label": "Document",
-    "scbr.filter.document.all": "All {documentType}",
-    "scbr.recovery.type.label": "Document type",
-    "scbr.recovery.list.label": "{documentType} backups",
-    "scbr.recovery.list.hintType": "All backups for {documentType}.",
-    "scbr.recovery.list.hintDocument": "Deleted document backups for {documentName}.",
-    "scbr.recovery.list.empty": "No backups exist for {documentType}.",
-    "scbr.recovery.list.emptyDocument": "No backups exist for {documentName}.",
-    "scbr.backup.unnamed": "Unnamed Backup",
-    "scbr.backup.noDate": "No timestamp",
-    "scbr.document.unknown": "Document",
-    "scbr.notification.backupCreated": "Backup '{backupName}' created for '{documentName}'.",
-    "scbr.notification.backupRestored": "Backup '{backupName}' restored for '{documentName}'.",
-    "scbr.notification.backupRemoved": "Backup '{backupName}' removed for '{documentName}'.",
-    "scbr.notification.reconstructed": "Reconstructed '{documentName}' from backup '{backupName}'.",
-    "scbr.notification.noBackup": "No backup exists for '{documentName}'.",
-    "scbr.notification.invalidBackup": "The stored backup for '{documentName}' is invalid.",
-    "scbr.notification.documentMissing": "The selected document could not be found.",
-    "scbr.notification.selectDocument": "Select a live document before creating a backup.",
-    "scbr.notification.unsupportedRecovery": "Recovery is not supported for '{documentType}'.",
-    "scbr.notification.error": "Sephral’s Content Backup & Restore failed: {message}"
-  },
-  de: {
-    "scbr.context.label": "Sephral’s Content Backup & Restore",
-    "scbr.action.backup": "Backup erstellen",
-    "scbr.action.remove": "Backup loeschen",
-    "scbr.action.cancel": "Abbrechen",
-    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
-    "scbr.dialog.summary.latest": "Neuestes Backup: {latest}.",
-    "scbr.dialog.summary.noneShort": "Erstelle das erste Backup fuer dieses Dokument.",
-    "scbr.dialog.create.title": "Backup erstellen",
-    "scbr.dialog.create.summary": "Erstelle ein neues Backup fuer {documentName}.",
-    "scbr.dialog.create.nameLabel": "Backup-Name",
-    "scbr.dialog.create.hint": "Datum und Uhrzeit werden automatisch gespeichert.",
-    "scbr.dialog.create.submit": "Backup erstellen",
-    "scbr.dialog.deleteConfirm.title": "Backup loeschen",
-    "scbr.dialog.deleteConfirm.body": "Backup '{backupName}' aus '{documentName}' loeschen?",
-    "scbr.dialog.deleteConfirm.confirm": "Loeschen",
-    "scbr.manager.empty": "Es sind noch keine Element-Backups vorhanden.",
-    "scbr.manager.selectionLabel": "Gespeicherte Backups",
-    "scbr.manager.hint": "Waehle ein Backup zum Wiederherstellen oder Loeschen.",
-    "scbr.manager.sortHint": "Neueste zuerst, Aktionen rechts.",
-    "scbr.manager.countLabel": "Backups",
-    "scbr.manager.emptyTitle": "Noch keine Backups",
-    "scbr.manager.available": "Vorhanden",
-    "scbr.manager.restore": "Backup wiederherstellen",
-    "scbr.manager.reconstruct": "Element rekonstruieren",
-    "scbr.manager.missing": "[geloescht]",
-    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
-    "scbr.settings.tool.label": "Open SCBR",
-    "scbr.settings.tool.hint": "Den gemeinsamen Backup-Dialog fuer alle unterstuetzten Weltdokumente oeffnen.",
-    "scbr.settings.preferences.name": "Oberflaechen-Einstellungen",
-    "scbr.settings.preferences.label": "Oberflaechen-Einstellungen oeffnen",
-    "scbr.settings.preferences.hint": "Sprache und Design fuer die Moduloberflaeche auswaehlen.",
-    "scbr.settings.preferences.title": "Oberflaechen-Einstellungen",
-    "scbr.settings.preferences.summary": "Lege fest, wie Sephral’s Content Backup & Restore aussieht und welche Modulsprache verwendet wird.",
-    "scbr.settings.preferences.section": "Anzeigeoptionen",
-    "scbr.settings.preferences.sectionHint": "Diese Einstellungen werden pro Benutzer gespeichert und gelten fuer die Moduloberflaeche.",
-    "scbr.settings.language.label": "Sprache",
-    "scbr.settings.language.hint": "Verwende die Foundry-Sprache oder erzwinge fuer dieses Modul eine der verfuegbaren Modulsprache.",
-    "scbr.settings.language.default": "Foundry folgen",
-    "scbr.settings.language.en": "English",
-    "scbr.settings.language.de": "Deutsch",
-    "scbr.settings.language.fr": "Francais",
-    "scbr.settings.language.es": "Espanol",
-    "scbr.settings.theme.label": "Design",
-    "scbr.settings.theme.hint": "Zwischen dem aktuellen Signatur-Look und einem Foundry-nahen Standardlayout wechseln.",
-    "scbr.settings.theme.signature": "Signatur",
-    "scbr.settings.theme.foundry": "Foundry-Standard",
-    "scbr.settings.save": "Einstellungen speichern",
-    "scbr.settings.saved": "Oberflaechen-Einstellungen aktualisiert.",
-    "scbr.filter.document.label": "Dokument",
-    "scbr.filter.document.all": "Alle {documentType}",
-    "scbr.recovery.type.label": "Dokumenttyp",
-    "scbr.recovery.list.label": "{documentType}-Backups",
-    "scbr.recovery.list.hintType": "Alle Backups fuer {documentType}.",
-    "scbr.recovery.list.hintDocument": "Backups fuer das geloeschte Dokument {documentName}.",
-    "scbr.recovery.list.empty": "Es existieren keine Backups fuer {documentType}.",
-    "scbr.recovery.list.emptyDocument": "Es existieren keine Backups fuer {documentName}.",
-    "scbr.backup.unnamed": "Unbenanntes Backup",
-    "scbr.backup.noDate": "Kein Zeitstempel",
-    "scbr.document.unknown": "Dokument",
-    "scbr.notification.backupCreated": "Backup '{backupName}' fuer '{documentName}' erstellt.",
-    "scbr.notification.backupRestored": "Backup '{backupName}' fuer '{documentName}' wiederhergestellt.",
-    "scbr.notification.backupRemoved": "Backup '{backupName}' fuer '{documentName}' entfernt.",
-    "scbr.notification.reconstructed": "'{documentName}' aus Backup '{backupName}' rekonstruiert.",
-    "scbr.notification.noBackup": "Fuer '{documentName}' existiert kein Backup.",
-    "scbr.notification.invalidBackup": "Das gespeicherte Backup fuer '{documentName}' ist ungueltig.",
-    "scbr.notification.documentMissing": "Das ausgewaehlte Element wurde nicht gefunden.",
-    "scbr.notification.selectDocument": "Waehle ein vorhandenes Dokument aus, bevor Du ein Backup erstellst.",
-    "scbr.notification.unsupportedRecovery": "Wiederherstellung wird fuer '{documentType}' nicht unterstuetzt.",
-    "scbr.notification.error": "Sephral’s Content Backup & Restore fehlgeschlagen: {message}"
-  },
-  fr: {
-    "scbr.context.label": "Sephral’s Content Backup & Restore",
-    "scbr.action.backup": "Creer une sauvegarde",
-    "scbr.action.remove": "Supprimer la sauvegarde",
-    "scbr.action.cancel": "Annuler",
-    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
-    "scbr.dialog.summary.latest": "Derniere sauvegarde : {latest}.",
-    "scbr.dialog.summary.noneShort": "Creez la premiere sauvegarde pour ce document.",
-    "scbr.dialog.create.title": "Creer une sauvegarde",
-    "scbr.dialog.create.summary": "Creer une nouvelle sauvegarde pour {documentName}.",
-    "scbr.dialog.create.nameLabel": "Nom de la sauvegarde",
-    "scbr.dialog.create.hint": "La date et l'heure actuelles sont enregistrees automatiquement.",
-    "scbr.dialog.create.submit": "Creer une sauvegarde",
-    "scbr.dialog.deleteConfirm.title": "Supprimer la sauvegarde",
-    "scbr.dialog.deleteConfirm.body": "Supprimer la sauvegarde '{backupName}' de '{documentName}' ?",
-    "scbr.dialog.deleteConfirm.confirm": "Supprimer",
-    "scbr.manager.empty": "Aucune sauvegarde de document n'est encore disponible.",
-    "scbr.manager.selectionLabel": "Sauvegardes enregistrees",
-    "scbr.manager.hint": "Choisissez une sauvegarde pour la restaurer ou la supprimer.",
-    "scbr.manager.sortHint": "Les plus recentes d'abord, actions a droite.",
-    "scbr.manager.countLabel": "Sauvegardes",
-    "scbr.manager.emptyTitle": "Aucune sauvegarde",
-    "scbr.manager.available": "Disponible",
-    "scbr.manager.restore": "Restaurer la sauvegarde",
-    "scbr.manager.reconstruct": "Reconstruire le document",
-    "scbr.manager.missing": "[supprime]",
-    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
-    "scbr.settings.tool.label": "Open SCBR",
-    "scbr.settings.tool.hint": "Ouvrir la boite de dialogue de sauvegarde unifiee pour tous les documents de monde pris en charge.",
-    "scbr.settings.preferences.name": "Parametres d'interface",
-    "scbr.settings.preferences.label": "Ouvrir les parametres d'interface",
-    "scbr.settings.preferences.hint": "Choisissez la langue et le design de cette interface de module.",
-    "scbr.settings.preferences.title": "Parametres d'interface",
-    "scbr.settings.preferences.summary": "Definissez l'apparence de Sephral’s Content Backup & Restore et la langue du module.",
-    "scbr.settings.preferences.section": "Options d'affichage",
-    "scbr.settings.preferences.sectionHint": "Ces preferences sont enregistrees par utilisateur et s'appliquent a l'interface du module.",
-    "scbr.settings.language.label": "Langue",
-    "scbr.settings.language.hint": "Utilisez la langue de Foundry ou forcez l'une des langues prises en charge par le module.",
-    "scbr.settings.language.default": "Suivre Foundry",
-    "scbr.settings.language.en": "English",
-    "scbr.settings.language.de": "Deutsch",
-    "scbr.settings.language.fr": "Francais",
-    "scbr.settings.language.es": "Espanol",
-    "scbr.settings.theme.label": "Design",
-    "scbr.settings.theme.hint": "Basculez entre le style signature actuel et une presentation proche de Foundry.",
-    "scbr.settings.theme.signature": "Signature",
-    "scbr.settings.theme.foundry": "Style Foundry",
-    "scbr.settings.save": "Enregistrer les parametres",
-    "scbr.settings.saved": "Parametres d'interface mis a jour.",
-    "scbr.filter.document.label": "Document",
-    "scbr.filter.document.all": "Tous les {documentType}",
-    "scbr.recovery.type.label": "Type de document",
-    "scbr.recovery.list.label": "Sauvegardes de {documentType}",
-    "scbr.recovery.list.hintType": "Toutes les sauvegardes pour {documentType}.",
-    "scbr.recovery.list.hintDocument": "Sauvegardes du document supprime {documentName}.",
-    "scbr.recovery.list.empty": "Aucune sauvegarde n'existe pour {documentType}.",
-    "scbr.recovery.list.emptyDocument": "Aucune sauvegarde n'existe pour {documentName}.",
-    "scbr.backup.unnamed": "Sauvegarde sans nom",
-    "scbr.backup.noDate": "Aucun horodatage",
-    "scbr.document.unknown": "Document",
-    "scbr.notification.backupCreated": "Sauvegarde '{backupName}' creee pour '{documentName}'.",
-    "scbr.notification.backupRestored": "Sauvegarde '{backupName}' restauree pour '{documentName}'.",
-    "scbr.notification.backupRemoved": "Sauvegarde '{backupName}' supprimee pour '{documentName}'.",
-    "scbr.notification.reconstructed": "'{documentName}' reconstruit depuis la sauvegarde '{backupName}'.",
-    "scbr.notification.noBackup": "Aucune sauvegarde n'existe pour '{documentName}'.",
-    "scbr.notification.invalidBackup": "La sauvegarde stockee pour '{documentName}' est invalide.",
-    "scbr.notification.documentMissing": "Le document selectionne est introuvable.",
-    "scbr.notification.selectDocument": "Selectionnez un document existant avant de creer une sauvegarde.",
-    "scbr.notification.unsupportedRecovery": "La restauration n'est pas prise en charge pour '{documentType}'.",
-    "scbr.notification.error": "Sephral’s Content Backup & Restore a echoue : {message}"
-  },
-  es: {
-    "scbr.context.label": "Sephral’s Content Backup & Restore",
-    "scbr.action.backup": "Crear copia de seguridad",
-    "scbr.action.remove": "Eliminar copia de seguridad",
-    "scbr.action.cancel": "Cancelar",
-    "scbr.dialog.title": "Sephral’s Content Backup & Restore",
-    "scbr.dialog.summary.latest": "Ultima copia de seguridad: {latest}.",
-    "scbr.dialog.summary.noneShort": "Crea la primera copia de seguridad para este documento.",
-    "scbr.dialog.create.title": "Crear copia de seguridad",
-    "scbr.dialog.create.summary": "Crear una nueva copia de seguridad para {documentName}.",
-    "scbr.dialog.create.nameLabel": "Nombre de la copia",
-    "scbr.dialog.create.hint": "La fecha y la hora actuales se guardan automaticamente.",
-    "scbr.dialog.create.submit": "Crear copia de seguridad",
-    "scbr.dialog.deleteConfirm.title": "Eliminar copia de seguridad",
-    "scbr.dialog.deleteConfirm.body": "Eliminar la copia de seguridad '{backupName}' de '{documentName}'?",
-    "scbr.dialog.deleteConfirm.confirm": "Eliminar",
-    "scbr.manager.empty": "Todavia no hay copias de seguridad de documentos.",
-    "scbr.manager.selectionLabel": "Copias guardadas",
-    "scbr.manager.hint": "Elige una copia para restaurarla o eliminarla.",
-    "scbr.manager.sortHint": "Las mas recientes primero, acciones a la derecha.",
-    "scbr.manager.countLabel": "Copias",
-    "scbr.manager.emptyTitle": "Aun no hay copias",
-    "scbr.manager.available": "Disponible",
-    "scbr.manager.restore": "Restaurar copia de seguridad",
-    "scbr.manager.reconstruct": "Reconstruir documento",
-    "scbr.manager.missing": "[eliminado]",
-    "scbr.settings.tool.name": "Sephral’s Content Backup & Restore",
-    "scbr.settings.tool.label": "Open SCBR",
-    "scbr.settings.tool.hint": "Abrir el dialogo de copias unificado para todos los documentos de mundo compatibles.",
-    "scbr.settings.preferences.name": "Configuracion de interfaz",
-    "scbr.settings.preferences.label": "Abrir configuracion de interfaz",
-    "scbr.settings.preferences.hint": "Elige el idioma y el diseno para esta interfaz del modulo.",
-    "scbr.settings.preferences.title": "Configuracion de interfaz",
-    "scbr.settings.preferences.summary": "Ajusta el aspecto de Sephral’s Content Backup & Restore y el idioma del modulo.",
-    "scbr.settings.preferences.section": "Opciones de visualizacion",
-    "scbr.settings.preferences.sectionHint": "Estas preferencias se guardan por usuario y se aplican a la interfaz del modulo.",
-    "scbr.settings.language.label": "Idioma",
-    "scbr.settings.language.hint": "Usa el idioma de Foundry o fuerza uno de los idiomas compatibles del modulo.",
-    "scbr.settings.language.default": "Seguir a Foundry",
-    "scbr.settings.language.en": "English",
-    "scbr.settings.language.de": "Deutsch",
-    "scbr.settings.language.fr": "Francais",
-    "scbr.settings.language.es": "Espanol",
-    "scbr.settings.theme.label": "Diseno",
-    "scbr.settings.theme.hint": "Cambia entre el estilo signature actual y una disposicion cercana al estilo Foundry.",
-    "scbr.settings.theme.signature": "Signature",
-    "scbr.settings.theme.foundry": "Predeterminado de Foundry",
-    "scbr.settings.save": "Guardar configuracion",
-    "scbr.settings.saved": "Configuracion de interfaz actualizada.",
-    "scbr.filter.document.label": "Documento",
-    "scbr.filter.document.all": "Todos los {documentType}",
-    "scbr.recovery.type.label": "Tipo de documento",
-    "scbr.recovery.list.label": "Copias de {documentType}",
-    "scbr.recovery.list.hintType": "Todas las copias para {documentType}.",
-    "scbr.recovery.list.hintDocument": "Copias del documento eliminado {documentName}.",
-    "scbr.recovery.list.empty": "No existen copias para {documentType}.",
-    "scbr.recovery.list.emptyDocument": "No existen copias para {documentName}.",
-    "scbr.backup.unnamed": "Copia sin nombre",
-    "scbr.backup.noDate": "Sin marca de tiempo",
-    "scbr.document.unknown": "Documento",
-    "scbr.notification.backupCreated": "Copia '{backupName}' creada para '{documentName}'.",
-    "scbr.notification.backupRestored": "Copia '{backupName}' restaurada para '{documentName}'.",
-    "scbr.notification.backupRemoved": "Copia '{backupName}' eliminada para '{documentName}'.",
-    "scbr.notification.reconstructed": "'{documentName}' reconstruido desde la copia '{backupName}'.",
-    "scbr.notification.noBackup": "No existe ninguna copia para '{documentName}'.",
-    "scbr.notification.invalidBackup": "La copia guardada para '{documentName}' no es valida.",
-    "scbr.notification.documentMissing": "No se pudo encontrar el documento seleccionado.",
-    "scbr.notification.selectDocument": "Selecciona un documento activo antes de crear una copia.",
-    "scbr.notification.unsupportedRecovery": "La recuperacion no es compatible con '{documentType}'.",
-    "scbr.notification.error": "Sephral’s Content Backup & Restore ha fallado: {message}"
-  }
-};
-
-const SUPPORTED_UI_LANGUAGES = Object.freeze(Object.keys(MODULE_TRANSLATIONS));
+const SUPPORTED_UI_LANGUAGES = Object.freeze(["en", "de"]);
 const DEFAULT_UI_LANGUAGE = "en";
+const MODULE_TRANSLATION_CACHE = new Map();
+let MODULE_TRANSLATION_LOAD = null;
 
 const SUPPORTED_DOCUMENTS = [
   { documentName: "Scene", getCollection: () => game.scenes },
@@ -310,14 +24,14 @@ const SUPPORTED_DOCUMENTS = [
 ];
 
 function localize(key, fallback, languageOverride) {
-  const override = MODULE_TRANSLATIONS[getModuleLanguage(languageOverride)]?.[key];
+  const override = MODULE_TRANSLATION_CACHE.get(getModuleLanguage(languageOverride))?.[key];
   if (override) return override;
   const value = game.i18n.localize(key);
   return value === key ? fallback : value;
 }
 
 function format(key, data, fallback, languageOverride) {
-  const override = MODULE_TRANSLATIONS[getModuleLanguage(languageOverride)]?.[key];
+  const override = MODULE_TRANSLATION_CACHE.get(getModuleLanguage(languageOverride))?.[key];
   if (override) return interpolateTemplate(override, data);
   const value = game.i18n.format(key, data);
   return value === key ? fallback : value;
@@ -357,6 +71,32 @@ function normalizeUiLanguage(value) {
 function getModuleLanguage(preferredLanguage=getPreferredLanguage()) {
   if (SUPPORTED_UI_LANGUAGES.includes(preferredLanguage)) return preferredLanguage;
   return normalizeUiLanguage(game.i18n?.lang);
+}
+
+async function loadModuleTranslations(language) {
+  const normalized = normalizeUiLanguage(language);
+  if (MODULE_TRANSLATION_CACHE.has(normalized)) return MODULE_TRANSLATION_CACHE.get(normalized);
+
+  const response = await fetch(`modules/${MODULE_ID}/lang/${normalized}.json`);
+  if (!response.ok) {
+    throw new Error(`Failed to load ${normalized} translations (${response.status})`);
+  }
+
+  const translations = await response.json();
+  MODULE_TRANSLATION_CACHE.set(normalized, translations);
+  return translations;
+}
+
+async function ensureModuleTranslationsLoaded() {
+  if (!MODULE_TRANSLATION_LOAD) {
+    MODULE_TRANSLATION_LOAD = Promise.all(SUPPORTED_UI_LANGUAGES.map((language) => loadModuleTranslations(language)))
+      .catch((error) => {
+        console.warn(`${MODULE_ID} |`, error);
+        return null;
+      });
+  }
+
+  return MODULE_TRANSLATION_LOAD;
 }
 
 function getThemePreference() {
@@ -1292,6 +1032,7 @@ async function waitForBackupDialog({ title, content, buttons, dialogClass="scbr-
 }
 
 async function openPreferencesDialog() {
+  await ensureModuleTranslationsLoaded();
   const result = await waitForBackupDialog({
     title: localize("scbr.settings.preferences.title", "Interface Settings"),
     content: buildSettingsLayout(),
@@ -1340,6 +1081,7 @@ function buildUnifiedToolbar(state) {
 }
 
 async function openBackupToolDialog({ document=null } = {}) {
+  await ensureModuleTranslationsLoaded();
   const initialType = document ? getDocumentType(document) : await promptForRecoveryType();
   const state = {
     documentType: initialType,
@@ -1587,6 +1329,7 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", async () => {
+  await ensureModuleTranslationsLoaded();
   await migrateLegacyBackups();
 });
 
