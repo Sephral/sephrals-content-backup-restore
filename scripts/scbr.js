@@ -104,6 +104,11 @@ async function ensureModuleTranslationsLoaded() {
   return MODULE_TRANSLATION_LOAD;
 }
 
+function resetModuleTranslationState() {
+  MODULE_TRANSLATION_CACHE.clear();
+  MODULE_TRANSLATION_LOAD = null;
+}
+
 function getThemePreference() {
   return getRegisteredSettingValue(UI_THEME_SETTING, "signature");
 }
@@ -431,9 +436,6 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
   }
 
   const normalized = normalizeBackup({ ...payload, path: `${parsedPath.filePath}#${parsedPath.backupId}` });
-  if (!normalized) {
-    throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
-  }
 
   if (includeSource) {
     return {
@@ -673,7 +675,11 @@ function getLegacyBackups(document) {
 
 async function migrateLegacyBackups() {
   const embeddedBackups = getEmbeddedBackupsFromStore(MODULE_ID);
-  const indexedBackups = getAllBackups();
+  const rawModuleStore = getStoredBackupSetting(MODULE_ID);
+  const embeddedKeys = new Set((rawModuleStore?.backups ?? [])
+    .filter((backup) => backup?.data && typeof backup.data === "object")
+    .map((backup) => `${backup.documentType ?? null}|${backup.documentId ?? null}|${backup.id ?? null}`));
+  const indexedBackups = getAllBackups().filter((backup) => !embeddedKeys.has(`${backup.documentType}|${backup.documentId}|${backup.id}`));
   const existing = [];
   const legacyStoresToClear = new Set();
   let migratedIndexedBackups = false;
@@ -970,14 +976,8 @@ async function reconstructDocumentFromBackup(backup) {
 
 async function removeBackupByEntry(backup) {
   const remaining = getAllBackups().filter((entry) => entry.id !== backup.id);
-  const deletion = await deleteBackupFile(backup.path);
+  await deleteBackupFile(backup.path);
   await saveBackupStore(remaining);
-
-  if (deletion?.unsupported) {
-    ui.notifications.warn(format("scbr.notification.fileDeleteUnsupported", {
-      filePath: getRootedStoragePath(normalizeStoragePath(backup.path))
-    }, "Backup metadata was removed, but Foundry does not provide a file-delete API in this runtime. Remove the payload file manually: {filePath}"));
-  }
 }
 
 async function removeBackup(document, backupId) {
@@ -1173,102 +1173,24 @@ function buildDialogLayout({ eyebrow, title, summary, count, sectionLabel, secti
   `;
 }
 
-function buildSelectOptions(options, selectedValue) {
-  return options.map((option) => {
-    const selected = option.value === selectedValue ? " selected" : "";
-    return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
-  }).join("");
+function getLanguageSettingChoices() {
+  return Object.fromEntries([
+    ["default", localize("scbr.settings.language.default", "Follow Foundry")],
+    ...SUPPORTED_UI_LANGUAGES.map((language) => {
+      const fallback = language === "de" ? "Deutsch" : language === "en" ? "English" : language;
+      return [
+        language,
+        localize(`scbr.settings.language.${language}`, fallback)
+      ];
+    })
+  ]);
 }
 
-function buildLanguageOptions(selectedValue, languageOverride) {
-  const options = [
-    { value: "default", label: localize("scbr.settings.language.default", "Follow Foundry", languageOverride) },
-    ...SUPPORTED_UI_LANGUAGES.map((language) => ({
-      value: language,
-      label: localize(`scbr.settings.language.${language}`, language, languageOverride)
-    }))
-  ];
-
-  return buildSelectOptions(options, selectedValue);
-}
-
-function buildThemeOptions(selectedValue, languageOverride) {
-  return buildSelectOptions([
-    { value: "signature", label: localize("scbr.settings.theme.signature", "Signature", languageOverride) },
-    { value: "foundry", label: localize("scbr.settings.theme.foundry", "Foundry Default", languageOverride) }
-  ], selectedValue);
-}
-
-function getPreferencesPreviewState(preferences={}) {
+function getThemeSettingChoices() {
   return {
-    uiLanguage: ["default", ...SUPPORTED_UI_LANGUAGES].includes(preferences.uiLanguage) ? preferences.uiLanguage : getPreferredLanguage(),
-    uiTheme: ["signature", "foundry"].includes(preferences.uiTheme) ? preferences.uiTheme : getThemePreference()
+    signature: localize("scbr.settings.theme.signature", "Signature"),
+    foundry: localize("scbr.settings.theme.foundry", "Foundry Default")
   };
-}
-
-function buildSettingsLayout(preferences={}) {
-  const state = getPreferencesPreviewState(preferences);
-  return buildDialogLayout({
-    eyebrow: localize("scbr.settings.preferences.title", "Interface Settings", state.uiLanguage),
-    title: localize("scbr.dialog.title", "Sephral’s Content Backup & Restore", state.uiLanguage),
-    summary: localize("scbr.settings.preferences.summary", "Adjust how Sephral’s Content Backup & Restore looks and which module language it uses.", state.uiLanguage),
-    count: 0,
-    sectionLabel: localize("scbr.settings.preferences.section", "Display options", state.uiLanguage),
-    sectionHint: localize("scbr.settings.preferences.sectionHint", "These preferences are stored per user and apply to the module UI.", state.uiLanguage),
-    showCount: false,
-    rowsHtml: `
-      <div class="scbr-input-panel scbr-settings-grid">
-        <div class="scbr-field-group">
-          <label class="scbr-panel-title" for="scbr-language-select">${escapeHtml(localize("scbr.settings.language.label", "Language", state.uiLanguage))}</label>
-          <span class="scbr-panel-hint">${escapeHtml(localize("scbr.settings.language.hint", "Use the Foundry language or force this module to English or German.", state.uiLanguage))}</span>
-          <select id="scbr-language-select" class="scbr-select" name="uiLanguage">
-            ${buildLanguageOptions(state.uiLanguage, state.uiLanguage)}
-          </select>
-        </div>
-        <div class="scbr-field-group">
-          <label class="scbr-panel-title" for="scbr-theme-select">${escapeHtml(localize("scbr.settings.theme.label", "Design", state.uiLanguage))}</label>
-          <span class="scbr-panel-hint">${escapeHtml(localize("scbr.settings.theme.hint", "Switch between the current signature look and a Foundry-style default layout.", state.uiLanguage))}</span>
-          <select id="scbr-theme-select" class="scbr-select" name="uiTheme">
-            ${buildThemeOptions(state.uiTheme, state.uiLanguage)}
-          </select>
-        </div>
-      </div>
-    `
-  });
-}
-
-function updatePreferencesDialogPreview(dialog, preferences={}) {
-  const state = getPreferencesPreviewState(preferences);
-  const content = dialog.element.querySelector(".dialog-content");
-  if (content) content.innerHTML = buildSettingsLayout(state);
-
-  const title = localize("scbr.settings.preferences.title", "Interface Settings", state.uiLanguage);
-  dialog.element.querySelector(".window-title")?.replaceChildren(document.createTextNode(title));
-
-  const saveButton = dialog.element.querySelector('[data-action="save"]');
-  if (saveButton) saveButton.textContent = localize("scbr.settings.save", "Save Settings", state.uiLanguage);
-
-  const cancelButton = dialog.element.querySelector('[data-action="cancel"]');
-  if (cancelButton) cancelButton.textContent = localize("scbr.action.cancel", "Cancel", state.uiLanguage);
-
-  applyDialogTheme(dialog.element, state.uiTheme);
-  bindPreferencesDialogPreview(dialog);
-}
-
-function bindPreferencesDialogPreview(dialog) {
-  const languageSelect = dialog.element.querySelector("#scbr-language-select");
-  const themeSelect = dialog.element.querySelector("#scbr-theme-select");
-
-  languageSelect?.addEventListener("change", (event) => {
-    updatePreferencesDialogPreview(dialog, {
-      uiLanguage: event.currentTarget.value,
-      uiTheme: themeSelect?.value
-    });
-  });
-
-  themeSelect?.addEventListener("change", (event) => {
-    applyDialogTheme(dialog.element, event.currentTarget.value);
-  });
 }
 
 function getFilteredEntries(entries, { documentType, documentId }) {
@@ -1492,44 +1414,6 @@ async function waitForBackupDialog({ title, content, buttons, dialogClass="scbr-
   });
 }
 
-async function openPreferencesDialog() {
-  await ensureModuleTranslationsLoaded();
-  const result = await waitForBackupDialog({
-    title: localize("scbr.settings.preferences.title", "Interface Settings"),
-    content: buildSettingsLayout(),
-    dialogClass: "scbr-dialog scbr-settings-dialog",
-    width: 760,
-    autoHeight: true,
-    onRender: (dialog) => {
-      bindPreferencesDialogPreview(dialog);
-    },
-    buttons: [
-      {
-        action: "save",
-        label: localize("scbr.settings.save", "Save Settings"),
-        default: true,
-        callback: (_event, button) => ({
-          uiLanguage: button.form.elements.uiLanguage.value,
-          uiTheme: button.form.elements.uiTheme.value
-        })
-      },
-      {
-        action: "cancel",
-        label: localize("scbr.action.cancel", "Cancel")
-      }
-    ]
-  });
-
-  if (!result || typeof result !== "object") return;
-
-  const nextLanguage = ["default", ...SUPPORTED_UI_LANGUAGES].includes(result.uiLanguage) ? result.uiLanguage : "default";
-  const nextTheme = ["signature", "foundry"].includes(result.uiTheme) ? result.uiTheme : "signature";
-
-  await game.settings.set(MODULE_ID, UI_LANGUAGE_SETTING, nextLanguage);
-  await game.settings.set(MODULE_ID, UI_THEME_SETTING, nextTheme);
-  ui.notifications.info(localize("scbr.settings.saved", "Interface settings updated."));
-}
-
 function buildUnifiedToolbar(state) {
   return `
     <div class="scbr-toolbar is-wide">
@@ -1686,33 +1570,6 @@ class BackupToolMenu extends foundry.applications.api.ApplicationV2 {
   }
 }
 
-class BackupToolSettingsMenu extends foundry.applications.api.ApplicationV2 {
-  static DEFAULT_OPTIONS = {
-    id: `${MODULE_ID}-settings-menu`,
-    tag: "div",
-    position: {
-      width: 1,
-      height: 1
-    },
-    window: {
-      frame: false,
-      positioned: false,
-      minimizable: false
-    }
-  };
-
-  async _renderHTML() {
-    return document.createElement("div");
-  }
-
-  _replaceHTML(_result, _content) {}
-
-  async render() {
-    await openPreferencesDialog();
-    return this;
-  }
-}
-
 function createContextOption(documentName) {
   return {
     name: localize("scbr.context.label", "Sephral’s Content Backup & Restore"),
@@ -1770,15 +1627,21 @@ Hooks.once("init", () => {
 
   game.settings.register(MODULE_ID, UI_LANGUAGE_SETTING, {
     scope: "client",
-    config: false,
+    config: true,
     type: String,
+    name: localize("scbr.settings.language.label", "Language"),
+    hint: localize("scbr.settings.language.hint", "Use the Foundry language or force this module to one of the supported module languages."),
+    choices: getLanguageSettingChoices(),
     default: "default"
   });
 
   game.settings.register(MODULE_ID, UI_THEME_SETTING, {
     scope: "client",
-    config: false,
+    config: true,
     type: String,
+    name: localize("scbr.settings.theme.label", "Design"),
+    hint: localize("scbr.settings.theme.hint", "Switch between the current signature look and a Foundry-style default layout."),
+    choices: getThemeSettingChoices(),
     default: "signature"
   });
 
@@ -1791,14 +1654,6 @@ Hooks.once("init", () => {
     restricted: true
   });
 
-  game.settings.registerMenu(MODULE_ID, "uiPreferences", {
-    name: localize("scbr.settings.preferences.name", "Interface Settings"),
-    label: localize("scbr.settings.preferences.label", "Open Interface Settings"),
-    hint: localize("scbr.settings.preferences.hint", "Choose the language and design for this module UI."),
-    icon: "fas fa-sliders",
-    type: BackupToolSettingsMenu,
-    restricted: false
-  });
 });
 
 Hooks.once("ready", async () => {
@@ -1811,3 +1666,121 @@ for (const config of SUPPORTED_DOCUMENTS) {
     contextOptions.push(createContextOption(config.documentName));
   });
 }
+
+export const __test__ = {
+  MODULE_ID,
+  LEGACY_MODULE_IDS,
+  STORE_SETTING,
+  STORE_LOCK_SETTING,
+  UI_LANGUAGE_SETTING,
+  UI_THEME_SETTING,
+  LEGACY_FLAG,
+  LEGACY_SCENE_BACKUP_FLAG,
+  BACKUP_STORAGE_VERSION,
+  SUPPORTED_UI_LANGUAGES,
+  DEFAULT_UI_LANGUAGE,
+  MODULE_TRANSLATION_CACHE,
+  LEGACY_STORAGE_ROOT,
+  WORLD_STORAGE_ROOT,
+  BACKUP_LOCK_TIMEOUT_MS,
+  BACKUP_LOCK_RETRY_MS,
+  SUPPORTED_DOCUMENTS,
+  localize,
+  format,
+  interpolateTemplate,
+  getRegisteredSettingValue,
+  getPreferredLanguage,
+  normalizeUiLanguage,
+  getModuleLanguage,
+  loadModuleTranslations,
+  ensureModuleTranslationsLoaded,
+  resetModuleTranslationState,
+  getThemePreference,
+  getLocaleForModule,
+  getDocumentType,
+  getSupportedDocumentConfig,
+  getDocumentCollection,
+  getDocumentTypeLabel,
+  getDocumentDisplayName,
+  getTimestampString,
+  formatBackupLabel,
+  escapeHtml,
+  getBackupDisplayParts,
+  ensureStylesLoaded,
+  applyDialogTheme,
+  sanitizePathSegment,
+  getWorldStorageRoot,
+  getLegacyWorldStorageRoot,
+  getStorageRoots,
+  normalizeStoragePath,
+  sleep,
+  getDocumentTypeStoragePath,
+  parseBackupPath,
+  buildBackupStoragePath,
+  sortBackups,
+  getRootedStoragePath,
+  getBackupFetchUrl,
+  getBackupFileName,
+  getBackupDirectoryPath,
+  acquireBackupStoreLock,
+  releaseBackupStoreLock,
+  withBackupStoreLock,
+  ensureStorageDirectoryExists,
+  writeBackupFile,
+  readBackupFile,
+  deleteBackupFile,
+  normalizeBackupIndex,
+  normalizeBackup,
+  getStoredBackupSetting,
+  getBackupStore,
+  getEmbeddedBackupsFromStore,
+  getLegacyBackupStore,
+  collectBackupsFromTypeFiles,
+  clearBackupStore,
+  unsetLegacyDocumentFlag,
+  saveBackupStore,
+  getAllBackups,
+  getBackups,
+  getBackupById,
+  setBackups,
+  getLegacyBackups,
+  migrateLegacyBackups,
+  getContextDataset,
+  getDocumentIdFromContext,
+  buildBackupPayload,
+  sanitizeFlags,
+  buildRestoreData,
+  buildReconstructionData,
+  getDocumentBackupSummary,
+  resolveDocumentForBackup,
+  createEntryFromBackup,
+  promptForBackupName,
+  createBackup,
+  restoreBackup,
+  reconstructDocumentFromBackup,
+  removeBackupByEntry,
+  removeBackup,
+  removeBackupEntry,
+  runDocumentAction,
+  runRecoveryAction,
+  getEntryPrimaryAction,
+  getDocumentPickerOptions,
+  buildRecoveryTypeOptions,
+  buildDialogLayout,
+  getLanguageSettingChoices,
+  getThemeSettingChoices,
+  getFilteredEntries,
+  getSelectedDocument,
+  getSelectedDocumentName,
+  getUnifiedDialogState,
+  buildBackupRows,
+  attachInlineBackupActions,
+  updateUnifiedDialogFilter,
+  waitForBackupDialog,
+  buildUnifiedToolbar,
+  openBackupToolDialog,
+  getManagerEntries,
+  promptForRecoveryType,
+  BackupToolMenu,
+  createContextOption
+};

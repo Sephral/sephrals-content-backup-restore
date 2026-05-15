@@ -403,10 +403,6 @@
   border-radius: 12px;
 }
 
-.scbr-settings-grid {
-  gap: 1rem;
-}
-
 .scbr-dialog[data-ui-theme="foundry"] .window-content {
   background:
     radial-gradient(circle at top center, rgba(255, 255, 255, 0.05), transparent 24%),
