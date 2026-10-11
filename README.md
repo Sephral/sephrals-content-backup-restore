@@ -21,7 +21,7 @@ If the embedded preview is not available in your GitHub view, please check the m
 - Recovery view for deleted documents when matching backups are available
 - Central module interface for backup management and recovery
 - Context menu entry on supported documents for quick access
-- Client-side interface settings for language and design
+- Client-side interface settings for language and design ("Follow Foundry" uses Foundry's language, including community translations)
 - World-scoped backup payload files with a slim metadata index in module settings
 
 ## Usage
@@ -38,3 +38,13 @@ If the embedded preview is not available in your GitHub view, please check the m
 - The world setting `sephrals-content-backup-restore.backupStore` stores only backup metadata (index), not full document payloads.
 - Backup writes are serialized with a world lock so two GMs cannot save conflicting changes at the same time.
 - Legacy data is migrated on startup.
+
+## The Forge
+
+On [The Forge](https://forge-vtt.com/) the world folder is not writable, so the module stores its backup files in your Assets Library instead:
+`sephrals-content-backup-restore/<world-id>/<DocumentType>.json`
+
+- The absolute Assets Library URL of each file is kept in the backup index next to its relative path and used for reading, deleting, and migrating.
+- Backups created before Forge support (under `worlds/<world-id>/...` or in the module folder) stay readable and are moved into the Assets Library folder on startup.
+- Deleting a backup rewrites the type file without that entry. To remove the files completely, delete the folder in the Assets Library.
+- Off The Forge nothing changes: files stay in the world data folder.

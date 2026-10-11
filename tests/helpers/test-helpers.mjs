@@ -268,6 +268,11 @@ export function createTestEnvironment() {
     HTMLElement: globalThis.HTMLElement,
     canvas: globalThis.canvas
   };
+  const forgeGlobals = ["ForgeVTT", "ForgeAPI"].map((name) => ({
+    name,
+    present: Object.prototype.hasOwnProperty.call(globalThis, name),
+    value: globalThis[name]
+  }));
 
   const hooks = createHooksStub();
 
@@ -336,6 +341,8 @@ export function createTestEnvironment() {
       apps: {
         FilePicker: {
           implementation: {
+            upload: (...args) => globalThis.FilePicker.upload(...args),
+            browse: (...args) => globalThis.FilePicker.browse(...args),
             async createDirectory(source, target, options) {
               state.createDirectoryCalls.push({ source, target, options });
               const error = state.createDirectoryErrors.get(target);
@@ -474,7 +481,19 @@ export function createTestEnvironment() {
     mockFetchFailure(url, status = 404) {
       state.fetchResponses.set(url, createResponse({ ok: false, status }));
     },
+    // Simulates The Forge the way its module exposes itself; cleanup() removes the globals again.
+    enableForge({ userId = "user123", prefix = "https://assets.forge-vtt.com/" } = {}) {
+      globalThis.ForgeVTT = { usingTheForge: true, ASSETS_LIBRARY_URL_PREFIX: prefix };
+      globalThis.ForgeAPI = { getUserId: async () => userId };
+    },
+    disableForge() {
+      for (const { name, present, value } of forgeGlobals) {
+        if (present) globalThis[name] = value;
+        else delete globalThis[name];
+      }
+    },
     cleanup() {
+      this.disableForge();
       globalThis.Hooks = originalGlobals.Hooks;
       globalThis.game = originalGlobals.game;
       globalThis.ui = originalGlobals.ui;

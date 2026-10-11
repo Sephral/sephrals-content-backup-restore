@@ -13,6 +13,10 @@ const MODULE_TRANSLATION_CACHE = new Map();
 let MODULE_TRANSLATION_LOAD = null;
 const LEGACY_STORAGE_ROOT = `modules/${MODULE_ID}/storage`;
 const WORLD_STORAGE_ROOT = "scbr";
+const DATA_STORAGE_SOURCE = "data";
+const FORGE_STORAGE_SOURCE = "forgevtt";
+// Latest absolute URL per rooted file path, as returned by uploads to The Forge in this session.
+const FORGE_FILE_URLS = new Map();
 const BACKUP_LOCK_TIMEOUT_MS = 8000;
 const BACKUP_LOCK_RETRY_MS = 120;
 
@@ -28,15 +32,20 @@ const SUPPORTED_DOCUMENTS = [
   { documentName: "Combat", getCollection: () => game.combats }
 ];
 
+function getModuleTranslationOverride(key, languageOverride) {
+  const language = getOverrideLanguage(languageOverride);
+  return language ? MODULE_TRANSLATION_CACHE.get(language)?.[key] : undefined;
+}
+
 function localize(key, fallback, languageOverride) {
-  const override = MODULE_TRANSLATION_CACHE.get(getModuleLanguage(languageOverride))?.[key];
+  const override = getModuleTranslationOverride(key, languageOverride);
   if (override) return override;
   const value = game.i18n.localize(key);
   return value === key ? fallback : value;
 }
 
 function format(key, data, fallback, languageOverride) {
-  const override = MODULE_TRANSLATION_CACHE.get(getModuleLanguage(languageOverride))?.[key];
+  const override = getModuleTranslationOverride(key, languageOverride);
   if (override) return interpolateTemplate(override, data);
   const value = game.i18n.format(key, data);
   return value === key ? fallback : value;
@@ -78,6 +87,12 @@ function getModuleLanguage(preferredLanguage=getPreferredLanguage()) {
   return normalizeUiLanguage(game.i18n?.lang);
 }
 
+function getOverrideLanguage(preferredLanguage=getPreferredLanguage()) {
+  // Only an explicit module language swaps in the bundled JSON. "Follow Foundry" leaves every string to
+  // game.i18n, which already merges this module's lang file, the English fallback and community translations.
+  return SUPPORTED_UI_LANGUAGES.includes(preferredLanguage) ? preferredLanguage : null;
+}
+
 async function loadModuleTranslations(language) {
   const normalized = normalizeUiLanguage(language);
   if (MODULE_TRANSLATION_CACHE.has(normalized)) return MODULE_TRANSLATION_CACHE.get(normalized);
@@ -113,8 +128,19 @@ function getThemePreference() {
   return getRegisteredSettingValue(UI_THEME_SETTING, "signature");
 }
 
+function getFoundryLocale() {
+  const language = String(game.i18n?.lang ?? "").trim().replace(/_/g, "-");
+  if (!language) return DEFAULT_UI_LANGUAGE;
+
+  try {
+    return Intl.getCanonicalLocales(language)[0] ?? DEFAULT_UI_LANGUAGE;
+  } catch (_error) {
+    return DEFAULT_UI_LANGUAGE;
+  }
+}
+
 function getLocaleForModule(preferredLanguage=getPreferredLanguage()) {
-  return preferredLanguage === "default" ? normalizeUiLanguage(game.i18n?.lang) : preferredLanguage;
+  return getOverrideLanguage(preferredLanguage) ?? getFoundryLocale();
 }
 
 function getDocumentType(document) {
@@ -198,9 +224,32 @@ function sanitizePathSegment(value, fallback="unknown") {
   return normalized || fallback;
 }
 
+function isUsingTheForge() {
+  // The Forge may declare ForgeVTT as a top-level class binding, which is global but not a globalThis property.
+  return typeof ForgeVTT !== "undefined" && ForgeVTT?.usingTheForge === true;
+}
+
+function getStorageSource() {
+  // On The Forge the user's Assets Library is the writable store; elsewhere the user data folder.
+  return isUsingTheForge() ? FORGE_STORAGE_SOURCE : DATA_STORAGE_SOURCE;
+}
+
+function isAbsoluteUrl(value) {
+  return /^https?:\/\//i.test(String(value ?? ""));
+}
+
+function getDataWorldStorageRoot() {
+  return `worlds/${game.world.id}/${WORLD_STORAGE_ROOT}`;
+}
+
+function getForgeWorldStorageRoot() {
+  return `${MODULE_ID}/${game.world.id}`;
+}
+
 function getWorldStorageRoot() {
   // Backup payloads belong to the world, so keep them under the world's data tree.
-  return `worlds/${game.world.id}/${WORLD_STORAGE_ROOT}`;
+  // The Forge has no writable world folder, so there they live per world in the Assets Library.
+  return isUsingTheForge() ? getForgeWorldStorageRoot() : getDataWorldStorageRoot();
 }
 
 function getLegacyWorldStorageRoot() {
@@ -208,7 +257,8 @@ function getLegacyWorldStorageRoot() {
 }
 
 function getStorageRoots() {
-  return [getWorldStorageRoot(), getLegacyWorldStorageRoot(), LEGACY_STORAGE_ROOT];
+  const roots = [getDataWorldStorageRoot(), getLegacyWorldStorageRoot(), LEGACY_STORAGE_ROOT];
+  return isUsingTheForge() ? [getForgeWorldStorageRoot(), ...roots] : roots;
 }
 
 function normalizeStoragePath(path) {
@@ -275,6 +325,123 @@ function getBackupDirectoryPath(path) {
   return parts.join("/");
 }
 
+function getStorageDirectoryTarget(path, root=getWorldStorageRoot()) {
+  return getRootedStoragePath(path, root).replace(/\/+$/, "");
+}
+
+function appendCacheBuster(url) {
+  return `${url}${String(url).includes("?") ? "&" : "?"}ts=${encodeURIComponent(Date.now())}`;
+}
+
+async function getForgeAssetBaseUrl() {
+  if (typeof ForgeVTT === "undefined" || typeof ForgeAPI === "undefined") return null;
+  const prefix = String(ForgeVTT?.ASSETS_LIBRARY_URL_PREFIX ?? "");
+  if (!prefix || typeof ForgeAPI?.getUserId !== "function") return null;
+
+  try {
+    const userId = await ForgeAPI.getUserId();
+    return userId ? `${prefix.replace(/\/+$/, "")}/${userId}/` : null;
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Could not resolve the Forge Assets Library URL.`, error);
+    return null;
+  }
+}
+
+async function getForgeAssetUrl(rootedPath) {
+  const baseUrl = await getForgeAssetBaseUrl();
+  return baseUrl ? `${baseUrl}${String(rootedPath ?? "").replace(/^\/+/, "")}` : null;
+}
+
+function rememberStorageFileUrl(rootedPath, url) {
+  if (isUsingTheForge() && isAbsoluteUrl(url)) FORGE_FILE_URLS.set(rootedPath, url);
+}
+
+function getFileUrlHints(backups, filePath) {
+  // A stored url always belongs to the world storage file named by the entry's own path.
+  return (backups ?? [])
+    .filter((backup) => backup?.path && isAbsoluteUrl(backup.url) && parseBackupPath(backup.path).filePath === filePath)
+    .map((backup) => backup.url);
+}
+
+function getIndexedFileUrls(filePath) {
+  try {
+    return getFileUrlHints(getStoredBackupSetting(MODULE_ID)?.backups, filePath);
+  } catch (_error) {
+    return [];
+  }
+}
+
+async function getStorageFileCandidates(filePath, { roots=getStorageRoots(), urls=[] } = {}) {
+  if (!isUsingTheForge()) {
+    return roots.map((root) => ({ root, url: getBackupFetchUrl(filePath, root), known: false }));
+  }
+
+  const worldRoot = getWorldStorageRoot();
+  const assetBaseUrl = await getForgeAssetBaseUrl();
+  const candidates = [];
+  const addCandidate = (root, url, known=false) => {
+    if (!url || candidates.some((candidate) => candidate.url === url)) return;
+    candidates.push({ root, url, known });
+  };
+
+  for (const root of roots) {
+    const rootedPath = getRootedStoragePath(filePath, root);
+    if (root === worldRoot) {
+      // Absolute URLs returned by uploads come first; the newest one from this session leads.
+      addCandidate(root, FORGE_FILE_URLS.get(rootedPath), true);
+      for (const url of [...urls, ...getIndexedFileUrls(filePath)]) {
+        if (isAbsoluteUrl(url)) addCandidate(root, url, true);
+      }
+    }
+
+    // Entries without a stored URL: computed Assets Library URL first, the relative path as last resort.
+    // Files written with source "data" before Forge support also live in the Assets Library at that path.
+    if (assetBaseUrl) addCandidate(root, `${assetBaseUrl}${rootedPath}`);
+    addCandidate(root, rootedPath);
+  }
+
+  return candidates;
+}
+
+async function fetchStorageCandidate(candidate) {
+  try {
+    const response = await fetch(appendCacheBuster(candidate.url), { cache: "no-store" });
+    if (!response.ok) return null;
+    return { ...candidate, data: await response.json() };
+  } catch (error) {
+    // Off The Forge every failure stays fatal as before. On The Forge only URLs from our own uploads are,
+    // because a write that cannot read its file would replace it with a partial copy.
+    if (!isUsingTheForge() || candidate.known) throw error;
+    console.warn(`${MODULE_ID} | Could not read '${candidate.url}'.`, error);
+    return null;
+  }
+}
+
+async function* iterateStorageFiles(filePath, options={}) {
+  for (const candidate of await getStorageFileCandidates(filePath, options)) {
+    const loaded = await fetchStorageCandidate(candidate);
+    if (loaded) yield loaded;
+  }
+}
+
+async function uploadStorageFile(serializedStore, filePath, root=getWorldStorageRoot()) {
+  const file = new File([
+    JSON.stringify(serializedStore, null, 2)
+  ], getBackupFileName(filePath), {
+    type: "application/json",
+    lastModified: Date.now()
+  });
+
+  const response = await foundry.applications.apps.FilePicker.implementation.upload(getStorageSource(), getStorageDirectoryTarget(getBackupDirectoryPath(filePath), root), file, {}, { notify: false });
+  if (response?.path) rememberStorageFileUrl(getRootedStoragePath(filePath, root), response.path);
+  return response;
+}
+
+function withStoredFileUrl(backup, url) {
+  // On The Forge, uploads answer with the absolute Assets Library URL; keep it next to the relative path.
+  return backup && isAbsoluteUrl(url) ? { ...backup, url } : backup;
+}
+
 async function acquireBackupStoreLock({ timeoutMs=BACKUP_LOCK_TIMEOUT_MS, retryMs=BACKUP_LOCK_RETRY_MS } = {}) {
   const token = `${game.user.id}-${foundry.utils.randomID()}`;
   const deadline = Date.now() + timeoutMs;
@@ -327,9 +494,20 @@ async function withBackupStoreLock(fn, options={}) {
   }
 }
 
-async function ensureStorageDirectoryExists(path) {
+async function ensureStorageDirectoryExists(path, root=getWorldStorageRoot()) {
   const filePicker = foundry.applications.apps.FilePicker.implementation;
-  const target = getRootedStoragePath(path);
+
+  if (isUsingTheForge()) {
+    // The Forge creates every missing parent in one call, and upload creates the target folder anyway.
+    try {
+      await filePicker.createDirectory(FORGE_STORAGE_SOURCE, getStorageDirectoryTarget(path, root), { notify: false });
+    } catch (_error) {
+      // Existing folders and Assets Library quirks are not fatal here.
+    }
+    return;
+  }
+
+  const target = getRootedStoragePath(path, root);
   const segments = target.split("/").filter(Boolean);
   let currentPath = "";
 
@@ -351,10 +529,7 @@ async function writeBackupFile(backup, path=null) {
     await ensureStorageDirectoryExists(getBackupDirectoryPath(parsedPath.filePath));
 
     let store = { version: BACKUP_STORAGE_VERSION, documentType: parsedPath.documentType, backups: [] };
-    for (const root of getStorageRoots()) {
-      const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
-      if (!response.ok) continue;
-      const loaded = await response.json();
+    for await (const { data: loaded } of iterateStorageFiles(parsedPath.filePath, { urls: getFileUrlHints([backup], parsedPath.filePath) })) {
       if (Array.isArray(loaded?.backups)) {
         store = {
           version: loaded.version ?? BACKUP_STORAGE_VERSION,
@@ -365,8 +540,10 @@ async function writeBackupFile(backup, path=null) {
       break;
     }
 
+    // The file URL belongs in the index only, never inside the payload file.
+    const { url: _fileUrl, ...backupData } = backup;
     const payload = {
-      ...backup,
+      ...backupData,
       path: resolvedPath,
       data: foundry.utils.deepClone(backup.data)
     };
@@ -385,19 +562,15 @@ async function writeBackupFile(backup, path=null) {
       backups: nextBackups
     };
 
-    const file = new File([
-      JSON.stringify(serializedStore, null, 2)
-    ], getBackupFileName(parsedPath.filePath), {
-      type: "application/json",
-      lastModified: Date.now()
-    });
-
-    const response = await FilePicker.upload("data", getRootedStoragePath(getBackupDirectoryPath(parsedPath.filePath)), file, {}, { notify: false });
+    const response = await uploadStorageFile(serializedStore, parsedPath.filePath);
     if (!response?.path) {
       throw new Error(`Failed to write backup file '${parsedPath.filePath}'.`);
     }
 
-    return normalizeBackup({ ...payload, id: backupId, documentType: parsedPath.documentType, path: `${parsedPath.filePath}#${backupId}` });
+    return withStoredFileUrl(
+      normalizeBackup({ ...payload, id: backupId, documentType: parsedPath.documentType, path: `${parsedPath.filePath}#${backupId}` }),
+      response.path
+    );
   });
 }
 
@@ -414,12 +587,9 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
 
   let payload = null;
   let sourceRoot = null;
+  let sourceUrl = null;
 
-  for (const root of getStorageRoots()) {
-    const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
-    if (!response.ok) continue;
-    const loaded = await response.json();
-
+  for await (const { root, url, data: loaded } of iterateStorageFiles(parsedPath.filePath, { urls: [backup?.url] })) {
     // Storage format: one file per document type with a backups array.
     if (Array.isArray(loaded?.backups)) {
       const backups = loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean);
@@ -428,6 +598,7 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
 
     if (!payload) continue;
     sourceRoot = root;
+    sourceUrl = url;
     break;
   }
 
@@ -436,18 +607,20 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
   }
 
   const normalized = normalizeBackup({ ...payload, path: `${parsedPath.filePath}#${parsedPath.backupId}` });
+  const resolved = sourceRoot === getWorldStorageRoot() ? withStoredFileUrl(normalized, sourceUrl) : normalized;
 
   if (includeSource) {
     return {
-      backup: normalized,
-      sourceRoot
+      backup: resolved,
+      sourceRoot,
+      sourceUrl
     };
   }
 
-  return normalized;
+  return resolved;
 }
 
-async function deleteBackupFile(path, { storageRoots=null } = {}) {
+async function deleteBackupFile(path, { storageRoots=null, url=null } = {}) {
   return withBackupStoreLock(async () => {
     const normalizedPath = normalizeStoragePath(path);
     if (!normalizedPath) return { deleted: false, unsupported: false };
@@ -458,18 +631,15 @@ async function deleteBackupFile(path, { storageRoots=null } = {}) {
     const roots = storageRoots ?? getStorageRoots();
     let deleted = false;
 
-    for (const root of roots) {
-      const response = await fetch(`${getBackupFetchUrl(parsedPath.filePath, root)}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
-      if (!response.ok) continue;
-
-      const loaded = await response.json();
+    // Foundry has no client-side delete: rewrite the type file without the entry, in the root it was found in.
+    for await (const { root, data: loaded } of iterateStorageFiles(parsedPath.filePath, { roots, urls: [url] })) {
       const currentBackups = Array.isArray(loaded?.backups)
         ? loaded.backups.map((entry) => normalizeBackup(entry)).filter(Boolean)
         : [];
       const nextBackups = currentBackups.filter((entry) => entry.id !== parsedPath.backupId);
       if (nextBackups.length === currentBackups.length) continue;
 
-      await ensureStorageDirectoryExists(getBackupDirectoryPath(parsedPath.filePath));
+      await ensureStorageDirectoryExists(getBackupDirectoryPath(parsedPath.filePath), root);
 
       const serializedStore = {
         version: BACKUP_STORAGE_VERSION,
@@ -477,14 +647,7 @@ async function deleteBackupFile(path, { storageRoots=null } = {}) {
         backups: nextBackups
       };
 
-      const file = new File([
-        JSON.stringify(serializedStore, null, 2)
-      ], getBackupFileName(parsedPath.filePath), {
-        type: "application/json",
-        lastModified: Date.now()
-      });
-
-      const upload = await FilePicker.upload("data", getRootedStoragePath(getBackupDirectoryPath(parsedPath.filePath)), file, {}, { notify: false });
+      const upload = await uploadStorageFile(serializedStore, parsedPath.filePath, root);
       if (!upload?.path) {
         throw new Error(`Failed to update backup file '${parsedPath.filePath}'.`);
       }
@@ -500,7 +663,7 @@ function normalizeBackupIndex(backup) {
   const path = normalizeStoragePath(backup?.path ?? backup?.filePath);
   if (!path) return null;
 
-  return {
+  const index = {
     id: backup.id || foundry.utils.randomID(),
     name: backup.name?.trim() || backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
     documentId: backup.documentId || null,
@@ -510,6 +673,10 @@ function normalizeBackupIndex(backup) {
     coreGeneration: backup.coreGeneration ?? null,
     path
   };
+
+  // Absolute file URL from The Forge, only present for files stored in its Assets Library.
+  if (isAbsoluteUrl(backup.url)) index.url = backup.url;
+  return index;
 }
 
 function normalizeBackup(backup) {
@@ -559,21 +726,25 @@ function getLegacyBackupStore(moduleId) {
   return stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean);
 }
 
-async function collectBackupsFromTypeFiles() {
+async function collectBackupsFromTypeFiles(knownBackups=[]) {
   const collected = [];
 
   for (const config of SUPPORTED_DOCUMENTS) {
     const filePath = getDocumentTypeStoragePath(config.documentName);
-    const response = await fetch(`${getBackupFetchUrl(filePath, getWorldStorageRoot())}?ts=${encodeURIComponent(Date.now())}`, { cache: "no-store" });
-    if (!response.ok) continue;
+    let file = null;
+    for await (const candidate of iterateStorageFiles(filePath, { roots: [getWorldStorageRoot()], urls: getFileUrlHints(knownBackups, filePath) })) {
+      file = candidate;
+      break;
+    }
+    if (!file) continue;
 
-    const loaded = await response.json();
+    const loaded = file.data;
     if (!Array.isArray(loaded?.backups)) continue;
 
     for (const raw of loaded.backups) {
       const normalized = normalizeBackup({ ...raw, documentType: raw.documentType || config.documentName });
       if (!normalized) continue;
-      collected.push(normalizeBackupIndex({ ...normalized, path: `${filePath}#${normalized.id}` }));
+      collected.push(normalizeBackupIndex(withStoredFileUrl({ ...normalized, path: `${filePath}#${normalized.id}` }, file.url)));
     }
   }
 
@@ -609,8 +780,8 @@ async function unsetLegacyDocumentFlag(document, scope, key) {
 
 async function saveBackupStore(backups) {
   await withBackupStoreLock(async () => {
-    const indexedFromFiles = await collectBackupsFromTypeFiles();
     const fallbackIndex = sortBackups(backups ?? []).map((backup) => normalizeBackupIndex(backup)).filter(Boolean);
+    const indexedFromFiles = await collectBackupsFromTypeFiles(fallbackIndex);
     const normalizedBackups = indexedFromFiles.length ? indexedFromFiles : fallbackIndex;
 
     await game.settings.set(MODULE_ID, STORE_SETTING, {
@@ -691,7 +862,13 @@ async function migrateLegacyBackups() {
     const canonicalPath = buildBackupStoragePath(resolved.backup);
     if (resolved.sourceRoot !== getWorldStorageRoot() || normalizeStoragePath(entry.path) !== canonicalPath) {
       const rewritten = await writeBackupFile(resolved.backup, canonicalPath);
-      await deleteBackupFile(resolved.backup.path || entry.path, { storageRoots: [resolved.sourceRoot] });
+      try {
+        await deleteBackupFile(resolved.backup.path || entry.path, { storageRoots: [resolved.sourceRoot], url: resolved.sourceUrl });
+      } catch (error) {
+        // On The Forge legacy folders may not be writable; the copy above already lives in the Assets Library.
+        if (!isUsingTheForge()) throw error;
+        console.warn(`${MODULE_ID} | Could not clean up legacy backup file '${resolved.backup.path || entry.path}'.`, error);
+      }
       existing.push(normalizeBackupIndex(rewritten));
       migratedIndexedBackups = true;
     } else {
@@ -976,7 +1153,7 @@ async function reconstructDocumentFromBackup(backup) {
 
 async function removeBackupByEntry(backup) {
   const remaining = getAllBackups().filter((entry) => entry.id !== backup.id);
-  await deleteBackupFile(backup.path);
+  await deleteBackupFile(backup.path, { url: backup.url });
   await saveBackupStore(remaining);
 }
 
@@ -1658,7 +1835,8 @@ Hooks.once("init", () => {
 
 Hooks.once("ready", async () => {
   await ensureModuleTranslationsLoaded();
-  await migrateLegacyBackups();
+  // Backups are GM-only; the migration rewrites world settings and files players may not write.
+  if (game.user?.isGM) await migrateLegacyBackups();
 });
 
 for (const config of SUPPORTED_DOCUMENTS) {
@@ -1682,6 +1860,9 @@ export const __test__ = {
   MODULE_TRANSLATION_CACHE,
   LEGACY_STORAGE_ROOT,
   WORLD_STORAGE_ROOT,
+  DATA_STORAGE_SOURCE,
+  FORGE_STORAGE_SOURCE,
+  FORGE_FILE_URLS,
   BACKUP_LOCK_TIMEOUT_MS,
   BACKUP_LOCK_RETRY_MS,
   SUPPORTED_DOCUMENTS,
@@ -1692,10 +1873,13 @@ export const __test__ = {
   getPreferredLanguage,
   normalizeUiLanguage,
   getModuleLanguage,
+  getOverrideLanguage,
+  getModuleTranslationOverride,
   loadModuleTranslations,
   ensureModuleTranslationsLoaded,
   resetModuleTranslationState,
   getThemePreference,
+  getFoundryLocale,
   getLocaleForModule,
   getDocumentType,
   getSupportedDocumentConfig,
@@ -1709,6 +1893,11 @@ export const __test__ = {
   ensureStylesLoaded,
   applyDialogTheme,
   sanitizePathSegment,
+  isUsingTheForge,
+  getStorageSource,
+  isAbsoluteUrl,
+  getDataWorldStorageRoot,
+  getForgeWorldStorageRoot,
   getWorldStorageRoot,
   getLegacyWorldStorageRoot,
   getStorageRoots,
@@ -1722,6 +1911,18 @@ export const __test__ = {
   getBackupFetchUrl,
   getBackupFileName,
   getBackupDirectoryPath,
+  getStorageDirectoryTarget,
+  appendCacheBuster,
+  getForgeAssetBaseUrl,
+  getForgeAssetUrl,
+  rememberStorageFileUrl,
+  getFileUrlHints,
+  getIndexedFileUrls,
+  getStorageFileCandidates,
+  fetchStorageCandidate,
+  iterateStorageFiles,
+  uploadStorageFile,
+  withStoredFileUrl,
   acquireBackupStoreLock,
   releaseBackupStoreLock,
   withBackupStoreLock,

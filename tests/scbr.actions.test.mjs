@@ -147,7 +147,7 @@ test("stable helper coverage exercises localization, theme, path, and translatio
   assert.equal(__test__.getThemePreference(), "signature");
 
   env.game.i18n.lang = "de-DE";
-  assert.equal(__test__.getLocaleForModule("default"), "de");
+  assert.equal(__test__.getLocaleForModule("default"), "de-DE");
   assert.equal(__test__.getDocumentType({ constructor: { metadata: { name: "Actor" } } }), "Actor");
   assert.equal(__test__.getSupportedDocumentConfig("Missing"), null);
   env.setCollection("Actor", [{ id: "actor-1", name: "Actor One", documentName: "Actor" }]);
