@@ -2,6 +2,12 @@
 
 Sephral’s Content Backup & Restore creates, manages, deletes, and reconstructs backups for supported world documents in FoundryVTT.
 
+## Foundry VTT
+
+[![Foundry VTT package](https://img.shields.io/badge/Foundry%20VTT-Package%20page-fe6a1f?logo=foundryvirtualtabletop&logoColor=white)](https://foundryvtt.com/packages/sephrals-content-backup-restore)
+
+Install the module from the package browser in Foundry VTT or open its [package page on foundryvtt.com](https://foundryvtt.com/packages/sephrals-content-backup-restore).
+
 ## Discord
 
 [![Join Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/7BjCgDYaBP)
