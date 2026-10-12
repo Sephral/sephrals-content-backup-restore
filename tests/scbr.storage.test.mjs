@@ -116,6 +116,51 @@ test("storage helpers normalize stores, collect file indexes, clear stores, and 
   env.cleanup();
 });
 
+test("the index rescan reads only listed or indexed type files and reads every file without a listing", async () => {
+  const env = createTestEnvironment();
+  const { __test__ } = await importModule("scripts/scbr.js");
+  const root = __test__.getWorldStorageRoot();
+  const files = new Map([
+    [`${root}/Scene.json`, { version: 6, documentType: "Scene", backups: [createBackupRecord()] }],
+    // On disk but unknown to the index: the listing still finds it, so the rescan keeps healing the index.
+    [`${root}/Macro.json`, { version: 6, documentType: "Macro", backups: [createBackupRecord({ id: "macro-1", documentType: "Macro", documentId: "macro-doc", path: "Macro.json#macro-1" })] }]
+  ]);
+  env.state.fetchImpl = async (url) => {
+    const clean = url.split("?")[0];
+    return files.has(clean) ? createResponse({ ok: true, json: structuredClone(files.get(clean)) }) : createResponse({ ok: false, status: 404 });
+  };
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: [{ id: "item-1", documentId: "item-doc", documentName: "Item", documentType: "Item", createdAt: "2024-01-01T00:00:00.000Z", path: "Item.json#item-1" }]
+  });
+  env.state.browseImpl = async () => ({ dirs: [], files: [`${root}/Scene.json`, `${root}/Macro.json`] });
+  const fetchedFiles = () => env.state.fetchCalls.map(({ url }) => url.split("?")[0].split("/").pop()).sort();
+
+  const collected = await __test__.collectBackupsFromTypeFiles([{ id: "actor-1", documentType: "Actor", path: "Actor.json#actor-1" }]);
+  assert.deepEqual(env.state.browseCalls.map(({ source, target }) => ({ source, target })), [{ source: "data", target: root }]);
+  // Listed files plus every type the index or the caller mentions; the other types are not probed.
+  assert.deepEqual(fetchedFiles(), ["Actor.json", "Item.json", "Macro.json", "Scene.json"]);
+  assert.deepEqual(collected.map((entry) => entry.id).sort(), ["backup-1", "macro-1"]);
+
+  // Without a usable listing every type file is read as before.
+  for (const browseImpl of [async () => { throw new Error("Directory does not exist"); }, async () => ({})]) {
+    env.state.fetchCalls.length = 0;
+    env.state.browseImpl = browseImpl;
+    const all = await __test__.collectBackupsFromTypeFiles();
+    assert.equal(env.state.fetchCalls.length, __test__.SUPPORTED_DOCUMENTS.length);
+    assert.deepEqual(all.map((entry) => entry.id).sort(), ["backup-1", "macro-1"]);
+  }
+
+  // A full save after a write only touches files that exist or are indexed.
+  env.state.fetchCalls.length = 0;
+  env.state.browseImpl = async () => ({ dirs: [], files: [`${root}/Scene.json`, `${root}/Macro.json`] });
+  await __test__.saveBackupStore(__test__.getAllBackups());
+  assert.deepEqual(fetchedFiles(), ["Item.json", "Macro.json", "Scene.json"]);
+  assert.deepEqual(__test__.getAllBackups().map((entry) => entry.id).sort(), ["backup-1", "macro-1"]);
+
+  env.cleanup();
+});
+
 test("backup store queries and store writes respect document identity", async () => {
   const env = createTestEnvironment();
   const { __test__ } = await importModule("scripts/scbr.js");

@@ -23,8 +23,8 @@ If the embedded preview is not available in your GitHub view, please check the m
 ## Features
 
 - Named backups for scenes, actors, items, journal entries, playlists, macros, roll tables, and cards
-- Restore existing documents from a selected backup
-- Recovery view for deleted documents when matching backups are available
+- Restore existing documents from a selected backup after a confirmation. The current state is saved as a backup first, so a restore can be undone with one click (world setting "Backup before restore", on by default)
+- Recovery view for deleted documents when matching backups are available. Reconstructed documents keep their original ID, so links, linked tokens and combat entries work again
 - Central module interface for backup management and recovery
 - Context menu entry on supported documents for quick access
 - Client-side interface settings for language and design ("Follow Foundry" uses Foundry's language, including community translations)

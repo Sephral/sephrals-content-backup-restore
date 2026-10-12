@@ -244,6 +244,7 @@ export function createTestEnvironment() {
     uploadResult: null,
     uploadImpl: null,
     browseCalls: [],
+    browseImpl: null,
     dialogWaitResult: null,
     dialogConfirmResult: true,
     lastDialogWaitOptions: null,
@@ -431,6 +432,7 @@ export function createTestEnvironment() {
     },
     async browse(source, target, options) {
       state.browseCalls.push({ source, target, options });
+      if (typeof state.browseImpl === "function") return state.browseImpl(source, target, options);
       return { dirs: [], files: [] };
     }
   };

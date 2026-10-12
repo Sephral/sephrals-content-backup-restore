@@ -4,6 +4,7 @@ const STORE_SETTING = "backupStore";
 const STORE_LOCK_SETTING = "backupStoreLock";
 const UI_LANGUAGE_SETTING = "uiLanguage";
 const UI_THEME_SETTING = "uiTheme";
+const SAFETY_BACKUP_SETTING = "safetyBackup";
 const LEGACY_FLAG = "documentBackups";
 const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
 const BACKUP_STORAGE_VERSION = 6;
@@ -126,6 +127,10 @@ function resetModuleTranslationState() {
 
 function getThemePreference() {
   return getRegisteredSettingValue(UI_THEME_SETTING, "signature");
+}
+
+function isSafetyBackupEnabled() {
+  return getRegisteredSettingValue(SAFETY_BACKUP_SETTING, true) !== false;
 }
 
 function getFoundryLocale() {
@@ -726,11 +731,43 @@ function getLegacyBackupStore(moduleId) {
   return stored.backups.map((backup) => normalizeBackup(backup)).filter(Boolean);
 }
 
+async function listWorldStorageFileNames() {
+  // One browse call off The Forge tells which type files exist, so the rescan does not probe missing ones (404s).
+  // Any failure returns null and the rescan reads every type file as before.
+  if (isUsingTheForge()) return null;
+
+  try {
+    const result = await foundry.applications.apps.FilePicker.implementation.browse(DATA_STORAGE_SOURCE, getWorldStorageRoot());
+    if (!Array.isArray(result?.files)) return null;
+    return new Set(result.files.map((file) => String(file ?? "").split("?")[0].split("/").pop()));
+  } catch (_error) {
+    return null;
+  }
+}
+
+function getIndexedDocumentTypes(knownBackups=[]) {
+  let indexed = [];
+  try {
+    indexed = getStoredBackupSetting(MODULE_ID)?.backups ?? [];
+  } catch (_error) {
+    indexed = [];
+  }
+
+  return new Set([...(knownBackups ?? []), ...(Array.isArray(indexed) ? indexed : [])]
+    .map((backup) => backup?.documentType)
+    .filter(Boolean));
+}
+
 async function collectBackupsFromTypeFiles(knownBackups=[]) {
   const collected = [];
+  const existingFiles = await listWorldStorageFileNames();
+  const indexedTypes = getIndexedDocumentTypes(knownBackups);
 
   for (const config of SUPPORTED_DOCUMENTS) {
     const filePath = getDocumentTypeStoragePath(config.documentName);
+    // Skip only files the listing lacks and the index does not mention; reading too much is safe, skipping is not.
+    if (existingFiles && !existingFiles.has(filePath) && !indexedTypes.has(config.documentName)) continue;
+
     let file = null;
     for await (const candidate of iterateStorageFiles(filePath, { roots: [getWorldStorageRoot()], urls: getFileUrlHints(knownBackups, filePath) })) {
       file = candidate;
@@ -991,9 +1028,25 @@ function buildRestoreData(document, backup) {
   return restoreData;
 }
 
-function buildReconstructionData(backup) {
+function isValidDocumentId(id) {
+  // Same rule as foundry.data.validators.isValidId in v13 and v14.
+  return typeof id === "string" && /^[a-zA-Z0-9]{16}$/.test(id);
+}
+
+function getReconstructionId(backup, collection) {
+  // The original id keeps @UUID links, linked tokens and combat references working.
+  const id = backup?.documentId ?? backup?.data?._id ?? null;
+  if (!isValidDocumentId(id)) return null;
+  // Documents with invalid source data still occupy their id, so ask for those too.
+  if (collection?.get?.(id, { invalid: true })) return null;
+  return id;
+}
+
+function buildReconstructionData(backup, documentId=null) {
   const createData = foundry.utils.deepClone(backup.data);
-  delete createData._id;
+  // Embedded documents keep their ids anyway: keepEmbeddedIds defaults to true on create.
+  if (documentId) createData._id = documentId;
+  else delete createData._id;
   createData.name ??= backup.documentName;
   sanitizeFlags(createData);
 
@@ -1073,20 +1126,55 @@ async function promptForBackupName(document) {
   return name ?? null;
 }
 
-async function createBackup(document) {
-  const name = await promptForBackupName(document);
-  if (name === null) return;
-
+async function storeBackup(document, name) {
   const backups = getBackups(document);
   const payload = buildBackupPayload(document, name);
   const storedBackup = await writeBackupFile(payload);
   backups.unshift(normalizeBackupIndex(storedBackup));
 
   await setBackups(document, backups);
+  return storedBackup;
+}
+
+async function createBackup(document) {
+  const name = await promptForBackupName(document);
+  if (name === null) return;
+
+  const storedBackup = await storeBackup(document, name);
   ui.notifications.info(format("scbr.notification.backupCreated", {
     backupName: formatBackupLabel(storedBackup),
     documentName: getDocumentDisplayName(document)
   }, `Backup '${formatBackupLabel(storedBackup)}' created for '${getDocumentDisplayName(document)}'.`));
+}
+
+function getSafetyBackupName() {
+  const timestamp = getTimestampString(new Date().toISOString());
+  return format("scbr.backup.safetyName", { timestamp }, `Before restore (${timestamp})`);
+}
+
+async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
+  const documentName = getDocumentDisplayName(document);
+  const hint = safetyBackup
+    ? localize("scbr.dialog.restoreConfirm.safetyHint", "The current state is saved as a backup first, so you can undo the restore.")
+    : localize("scbr.dialog.restoreConfirm.noSafetyHint", "The automatic backup before a restore is turned off in the module settings.");
+
+  return foundry.applications.api.DialogV2.confirm({
+    window: {
+      title: localize("scbr.dialog.restoreConfirm.title", "Restore Backup")
+    },
+    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.restoreConfirm.body", {
+      backupName: formatBackupLabel(backup),
+      documentName
+    }, `Restore backup '${formatBackupLabel(backup)}' for '${documentName}'? The current state of the document will be overwritten.`))}</p><p>${foundry.utils.escapeHTML(hint)}</p>`,
+    yes: {
+      label: localize("scbr.dialog.restoreConfirm.confirm", "Restore")
+    },
+    no: {
+      label: localize("scbr.action.cancel", "Cancel")
+    },
+    rejectClose: false,
+    modal: true
+  });
 }
 
 async function restoreBackup(document, backupId) {
@@ -1096,12 +1184,27 @@ async function restoreBackup(document, backupId) {
     return;
   }
 
+  const safetyEnabled = isSafetyBackupEnabled();
+  const confirmed = await confirmRestore(document, backupIndex, { safetyBackup: safetyEnabled });
+  if (!confirmed) return;
+
   const backup = await readBackupFile(backupIndex);
   const restoreData = buildRestoreData(document, backup);
+  // Keep the current state one click away. If this copy cannot be saved, the restore does not run.
+  const safetyBackup = safetyEnabled ? await storeBackup(document, getSafetyBackupName()) : null;
   await document.update(restoreData, { diff: false, recursive: false });
 
   if (getDocumentType(document) === "Scene" && canvas?.scene?.id === document.id) {
     await canvas.draw();
+  }
+
+  if (safetyBackup) {
+    ui.notifications.info(format("scbr.notification.backupRestoredWithSafety", {
+      backupName: formatBackupLabel(backup),
+      documentName: getDocumentDisplayName(document),
+      safetyName: safetyBackup.name
+    }, `Backup '${formatBackupLabel(backup)}' restored for '${getDocumentDisplayName(document)}'. The previous state was saved as '${safetyBackup.name}'.`));
+    return;
   }
 
   ui.notifications.info(format("scbr.notification.backupRestored", {
@@ -1117,31 +1220,36 @@ async function reconstructDocumentFromBackup(backup) {
     throw new Error(format("scbr.notification.unsupportedRecovery", { documentType: getDocumentTypeLabel(storedBackup.documentType) }, `Recovery is not supported for '${getDocumentTypeLabel(storedBackup.documentType)}'.`));
   }
 
-  const createData = buildReconstructionData(storedBackup);
-  const created = await collection.documentClass.create(createData, { renderSheet: true });
+  const keptId = getReconstructionId(storedBackup, collection);
+  const createData = buildReconstructionData(storedBackup, keptId);
+  const created = await collection.documentClass.create(createData, { renderSheet: true, keepId: Boolean(keptId) });
   if (!created) return null;
 
-  const updatedBackups = [];
-  for (const entry of getAllBackups()) {
-    if (entry.documentType !== storedBackup.documentType || entry.documentId !== storedBackup.documentId) {
-      updatedBackups.push(entry);
-      continue;
-    }
-
-    const record = await readBackupFile(entry);
-    const rewritten = await writeBackupFile({
-      ...record,
-      documentId: created.id,
-      documentName: getDocumentDisplayName(created),
-      data: {
-        ...foundry.utils.deepClone(record.data),
-        _id: created.id,
-        name: getDocumentDisplayName(created)
+  // With the original id every backup still points to the document and the index stays valid.
+  // Only when that id was taken do the backups move to the new document.
+  if (created.id !== storedBackup.documentId) {
+    const updatedBackups = [];
+    for (const entry of getAllBackups()) {
+      if (entry.documentType !== storedBackup.documentType || entry.documentId !== storedBackup.documentId) {
+        updatedBackups.push(entry);
+        continue;
       }
-    }, entry.path);
-    updatedBackups.push(normalizeBackupIndex(rewritten));
+
+      const record = await readBackupFile(entry);
+      const rewritten = await writeBackupFile({
+        ...record,
+        documentId: created.id,
+        documentName: getDocumentDisplayName(created),
+        data: {
+          ...foundry.utils.deepClone(record.data),
+          _id: created.id,
+          name: getDocumentDisplayName(created)
+        }
+      }, entry.path);
+      updatedBackups.push(normalizeBackupIndex(rewritten));
+    }
+    await saveBackupStore(updatedBackups);
   }
-  await saveBackupStore(updatedBackups);
 
   ui.notifications.info(format("scbr.notification.reconstructed", {
     documentName: getDocumentDisplayName(created),
@@ -1689,7 +1797,7 @@ async function openBackupToolDialog({ document=null } = {}) {
       if (entry?.document) {
         await runDocumentAction(entry.document, (currentDocument) => restoreBackup(currentDocument, result.backupId));
       }
-      return;
+      continue;
     }
 
     if (result?.action === "reconstruct" && result.backupId) {
@@ -1822,6 +1930,15 @@ Hooks.once("init", () => {
     default: "signature"
   });
 
+  game.settings.register(MODULE_ID, SAFETY_BACKUP_SETTING, {
+    scope: "world",
+    config: true,
+    type: Boolean,
+    name: localize("scbr.settings.safetyBackup.label", "Backup before restore"),
+    hint: localize("scbr.settings.safetyBackup.hint", "Save the current state of a document as a backup before a restore overwrites it, so the restore can be undone with one click."),
+    default: true
+  });
+
   game.settings.registerMenu(MODULE_ID, "backupTool", {
     name: localize("scbr.settings.tool.name", "Sephral’s Content Backup & Restore"),
     label: localize("scbr.settings.tool.label", "Open SCBR"),
@@ -1852,6 +1969,7 @@ export const __test__ = {
   STORE_LOCK_SETTING,
   UI_LANGUAGE_SETTING,
   UI_THEME_SETTING,
+  SAFETY_BACKUP_SETTING,
   LEGACY_FLAG,
   LEGACY_SCENE_BACKUP_FLAG,
   BACKUP_STORAGE_VERSION,
@@ -1879,6 +1997,7 @@ export const __test__ = {
   ensureModuleTranslationsLoaded,
   resetModuleTranslationState,
   getThemePreference,
+  isSafetyBackupEnabled,
   getFoundryLocale,
   getLocaleForModule,
   getDocumentType,
@@ -1936,6 +2055,8 @@ export const __test__ = {
   getBackupStore,
   getEmbeddedBackupsFromStore,
   getLegacyBackupStore,
+  listWorldStorageFileNames,
+  getIndexedDocumentTypes,
   collectBackupsFromTypeFiles,
   clearBackupStore,
   unsetLegacyDocumentFlag,
@@ -1951,12 +2072,17 @@ export const __test__ = {
   buildBackupPayload,
   sanitizeFlags,
   buildRestoreData,
+  isValidDocumentId,
+  getReconstructionId,
   buildReconstructionData,
   getDocumentBackupSummary,
   resolveDocumentForBackup,
   createEntryFromBackup,
   promptForBackupName,
+  storeBackup,
   createBackup,
+  getSafetyBackupName,
+  confirmRestore,
   restoreBackup,
   reconstructDocumentFromBackup,
   removeBackupByEntry,

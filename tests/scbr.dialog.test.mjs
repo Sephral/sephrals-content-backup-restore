@@ -205,8 +205,12 @@ test("waitForBackupDialog, openBackupToolDialog, menu rendering, and context cal
   });
   assert.deepEqual(waitResult, { action: "restore", documentId: "scene-1", documentType: "Scene", backupId: "backup-1" });
 
-  env.state.dialogWaitResult = { action: "restore", backupId: "backup-1" };
+  // Restore returns to the manager like the other actions, so the queue has to end with a close.
+  const managerQueue = [{ action: "restore", backupId: "backup-1" }, null, null];
+  env.state.dialogWaitResult = () => managerQueue.shift();
   await __test__.openBackupToolDialog({ document: scene });
+  assert.equal(env.state.lastDialogConfirmOptions?.window?.title, "Restore Backup");
+  assert.equal(managerQueue.length, 1);
   const menu = new __test__.BackupToolMenu();
   assert.equal((await menu._renderHTML()).tagName, "DIV");
   assert.equal(await menu.render(), menu);

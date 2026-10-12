@@ -145,11 +145,23 @@ test("writes to the Assets Library and stores the absolute URL in the index, not
     assert.equal(indexed.url, fileUrl);
     assert.equal(env.state.settingsValues.get(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`).backups[0].url, fileUrl);
 
+    // Default: the backup is read through the stored URL, then the safety backup lands in the same Assets Library file.
     env.state.fetchCalls.length = 0;
     await __test__.restoreBackup(scene, indexed.id);
     assert.equal(scene.lastUpdate.updateData._id, "scene-1");
+    assert.equal(env.state.fetchCalls[0].url.startsWith(`${fileUrl}?ts=`), true);
+    assert.equal(files.get(fileUrl).backups.length, 2);
+    assert.equal(__test__.getAllBackups().length, 2);
+    assert.equal(__test__.getAllBackups().every((entry) => entry.url === fileUrl), true);
+
+    // Without the safety backup the restore needs exactly one read.
+    env.game.settings.settings.set(`${__test__.MODULE_ID}.${__test__.SAFETY_BACKUP_SETTING}`, {});
+    env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.SAFETY_BACKUP_SETTING}`, false);
+    env.state.fetchCalls.length = 0;
+    await __test__.restoreBackup(scene, indexed.id);
     assert.equal(env.state.fetchCalls.length, 1);
     assert.equal(env.state.fetchCalls[0].url.startsWith(`${fileUrl}?ts=`), true);
+    assert.equal(files.get(fileUrl).backups.length, 2);
   } finally {
     env.cleanup();
   }
@@ -308,6 +320,8 @@ test("a renamed upload URL wins over the stored one within the session", async (
 
     const collected = await __test__.collectBackupsFromTypeFiles();
     assert.deepEqual(collected.map((entry) => entry.url), [written.url, written.url]);
+    // The Assets Library is not listed: on The Forge the rescan reads every type file as before.
+    assert.equal(env.state.browseCalls.length, 0);
   } finally {
     env.cleanup();
   }

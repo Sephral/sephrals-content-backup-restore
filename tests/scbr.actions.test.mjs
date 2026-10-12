@@ -39,6 +39,8 @@ function resetState() {
   env.state.uploadResult = null;
   env.state.createDirectoryCalls.length = 0;
   env.state.createDirectoryErrors.clear();
+  env.state.browseCalls.length = 0;
+  env.state.browseImpl = null;
   env.state.settingWrites.length = 0;
   env.state.settingsValues.clear();
   env.state.settingsRegistry.clear();
@@ -389,6 +391,194 @@ test("migration rewrites indexed backups, merges legacy sources, and clears lega
   assert.equal(store.backups.some((entry) => entry.id === "indexed-1"), true);
   assert.equal(store.backups.length >= 1, true);
   assert.equal(env.state.settingWrites.some((entry) => entry.moduleId === "backup-tool" && entry.settingKey === __test__.STORE_SETTING), true);
+});
+
+const ACTOR_ID = "a1B2c3D4e5F6g7H8";
+const ITEM_ID = "i1B2c3D4e5F6g7H8";
+
+function createActorBackupRecord(overrides = {}) {
+  return createBackupRecord({
+    id: "actor-backup-1",
+    name: "Goblin Backup",
+    documentId: ACTOR_ID,
+    documentName: "Goblin",
+    documentType: "Actor",
+    createdAt: "2024-01-02T00:00:00.000Z",
+    path: "Actor.json#actor-backup-1",
+    data: { _id: ACTOR_ID, name: "Goblin", items: [{ _id: ITEM_ID, name: "Scimitar" }], flags: { [__test__.MODULE_ID]: { temp: true } } },
+    ...overrides
+  });
+}
+
+function toIndexEntry({ data: _data, ...record }) {
+  return record;
+}
+
+function seedActorBackups(storage) {
+  const records = [
+    createActorBackupRecord(),
+    createActorBackupRecord({ id: "actor-backup-0", name: "Older", createdAt: "2024-01-01T00:00:00.000Z", path: "Actor.json#actor-backup-0" })
+  ];
+  storage.write("Actor.json", { version: 6, documentType: "Actor", backups: records });
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: records.map(toIndexEntry)
+  });
+  return records;
+}
+
+test("reconstruct keeps the original id and embedded ids and leaves the backups untouched", async () => {
+  const storage = createVirtualStorage();
+  const [record] = seedActorBackups(storage);
+  const createCalls = [];
+  env.setCollection("Actor", [], {
+    createResult: async (data, options) => {
+      createCalls.push({ data, options });
+      return { id: data._id, name: data.name, documentName: "Actor" };
+    }
+  });
+
+  const created = await __test__.reconstructDocumentFromBackup(toIndexEntry(record));
+
+  assert.equal(created.id, ACTOR_ID);
+  assert.equal(createCalls.length, 1);
+  assert.equal(createCalls[0].options.keepId, true);
+  assert.equal(createCalls[0].options.renderSheet, true);
+  assert.equal(createCalls[0].data._id, ACTOR_ID);
+  assert.equal(createCalls[0].data.items[0]._id, ITEM_ID);
+  assert.equal(createCalls[0].data.flags, undefined);
+  // No backup is rewritten and the index is not touched: the backups still point to the same id.
+  assert.equal(env.state.uploadCalls.length, 0);
+  assert.equal(env.state.settingWrites.some((entry) => entry.settingKey === __test__.STORE_SETTING), false);
+  assert.deepEqual(__test__.getAllBackups().map((entry) => [entry.id, entry.documentId]), [["actor-backup-1", ACTOR_ID], ["actor-backup-0", ACTOR_ID]]);
+  assert.equal(storage.files.get("worlds/test-world/scbr/Actor.json").backups.every((entry) => entry.documentId === ACTOR_ID), true);
+  assert.equal(env.state.notifications.info.some((message) => String(message).includes("Goblin")), true);
+});
+
+test("reconstruct falls back to a new id when the original id is still taken and moves the backups over", async () => {
+  const storage = createVirtualStorage();
+  const [record] = seedActorBackups(storage);
+  const newId = "n1B2c3D4e5F6g7H8";
+  const createCalls = [];
+  const getCalls = [];
+  env.game.actors = {
+    contents: [],
+    // A document with invalid source data is only returned when asked for with invalid: true.
+    get(id, options) {
+      getCalls.push({ id, options });
+      return options?.invalid && id === ACTOR_ID ? { id: ACTOR_ID, name: "Broken", documentName: "Actor" } : null;
+    },
+    documentClass: {
+      async create(data, options) {
+        createCalls.push({ data, options });
+        return { id: newId, name: data.name, documentName: "Actor" };
+      }
+    }
+  };
+
+  const created = await __test__.reconstructDocumentFromBackup(toIndexEntry(record));
+
+  assert.equal(created.id, newId);
+  assert.deepEqual(getCalls[0], { id: ACTOR_ID, options: { invalid: true } });
+  assert.equal(createCalls[0].options.keepId, false);
+  assert.equal(createCalls[0].data._id, undefined);
+  assert.equal(createCalls[0].data.items[0]._id, ITEM_ID);
+  assert.deepEqual(__test__.getAllBackups().map((entry) => entry.documentId), [newId, newId]);
+  const fileBackups = storage.files.get("worlds/test-world/scbr/Actor.json").backups;
+  assert.equal(fileBackups.every((entry) => entry.documentId === newId && entry.data._id === newId), true);
+});
+
+test("restore asks first and does nothing when the dialog is cancelled", async () => {
+  createVirtualStorage();
+  const scene = createDocument();
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: [toIndexEntry(createBackupRecord())]
+  });
+  env.state.dialogConfirmResult = false;
+
+  await __test__.restoreBackup(scene, "backup-1");
+
+  assert.equal(env.state.lastDialogConfirmOptions.window.title, "Restore Backup");
+  assert.equal(env.state.lastDialogConfirmOptions.yes.label, "Restore");
+  assert.equal(env.state.lastDialogConfirmOptions.content.includes("Scene Backup"), true);
+  assert.equal(env.state.lastDialogConfirmOptions.content.includes("saved as a backup first"), true);
+  assert.equal(scene.lastUpdate, undefined);
+  assert.equal(env.state.fetchCalls.length, 0);
+  assert.equal(env.state.uploadCalls.length, 0);
+});
+
+test("restore saves the current state as a safety backup before it overwrites the document", async () => {
+  const storage = createVirtualStorage();
+  const order = [];
+  const upload = env.state.uploadImpl;
+  env.state.uploadImpl = async (...args) => {
+    order.push("upload");
+    return upload(...args);
+  };
+  const scene = createDocument({ data: { width: 4000 } });
+  const update = scene.update;
+  scene.update = async function (...args) {
+    order.push("update");
+    return update.apply(this, args);
+  };
+  env.setCollection("Scene", [scene]);
+  storage.write("Scene.json", { version: 6, documentType: "Scene", backups: [createBackupRecord({ data: { name: "Scene One", width: 1000 } })] });
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: [toIndexEntry(createBackupRecord())]
+  });
+
+  await __test__.restoreBackup(scene, "backup-1");
+
+  assert.deepEqual(order, ["upload", "update"]);
+  assert.equal(scene.lastUpdate.updateData.width, 1000);
+  const backups = __test__.getBackups(scene);
+  assert.equal(backups.length, 2);
+  const safety = backups.find((entry) => entry.id !== "backup-1");
+  assert.match(safety.name, /^Before restore \(.+\)$/);
+  const stored = storage.files.get("worlds/test-world/scbr/Scene.json").backups.find((entry) => entry.id === safety.id);
+  assert.equal(stored.data.width, 4000);
+  assert.equal(env.state.notifications.info.at(-1).includes(`The previous state was saved as '${safety.name}'`), true);
+
+  // The safety backup is an ordinary backup: restoring it undoes the restore.
+  await __test__.restoreBackup(scene, safety.id);
+  assert.equal(scene.lastUpdate.updateData.width, 4000);
+});
+
+test("restore skips the safety backup when the world setting is off", async () => {
+  const storage = createVirtualStorage();
+  env.game.settings.settings.set(`${__test__.MODULE_ID}.${__test__.SAFETY_BACKUP_SETTING}`, {});
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.SAFETY_BACKUP_SETTING}`, false);
+  const scene = createDocument();
+  storage.write("Scene.json", { version: 6, documentType: "Scene", backups: [createBackupRecord()] });
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: [toIndexEntry(createBackupRecord())]
+  });
+
+  assert.equal(__test__.isSafetyBackupEnabled(), false);
+  await __test__.restoreBackup(scene, "backup-1");
+
+  assert.equal(env.state.lastDialogConfirmOptions.content.includes("turned off in the module settings"), true);
+  assert.equal(scene.lastUpdate.updateData._id, "scene-1");
+  assert.equal(env.state.uploadCalls.length, 0);
+  assert.equal(__test__.getBackups(scene).length, 1);
+  assert.equal(env.state.notifications.info.at(-1).includes("previous state"), false);
+});
+
+test("a failed safety backup aborts the restore", async () => {
+  const storage = createVirtualStorage();
+  const scene = createDocument();
+  storage.write("Scene.json", { version: 6, documentType: "Scene", backups: [createBackupRecord()] });
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: [toIndexEntry(createBackupRecord())]
+  });
+  env.state.uploadImpl = async () => ({});
+
+  await assert.rejects(() => __test__.restoreBackup(scene, "backup-1"), /Failed to write backup file/);
+  assert.equal(scene.lastUpdate, undefined);
 });
 
 function createBackupRecord(overrides = {}) {

@@ -34,6 +34,15 @@ test("registers SCBR settings, menu, ready migration, and context options", asyn
   assert.equal(env.state.registerCalls.some((entry) => entry.moduleId === __test__.MODULE_ID && entry.settingKey === __test__.UI_LANGUAGE_SETTING), true);
   assert.equal(env.state.registerMenuCalls.some((entry) => entry.moduleId === __test__.MODULE_ID && entry.key === "backupTool"), true);
 
+  const safetySetting = env.state.registerCalls.find((entry) => entry.moduleId === __test__.MODULE_ID && entry.settingKey === __test__.SAFETY_BACKUP_SETTING);
+  assert.equal(safetySetting.config.scope, "world");
+  assert.equal(safetySetting.config.config, true);
+  assert.equal(safetySetting.config.type, Boolean);
+  assert.equal(safetySetting.config.default, true);
+  assert.equal(__test__.isSafetyBackupEnabled(), true);
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.SAFETY_BACKUP_SETTING}`, false);
+  assert.equal(__test__.isSafetyBackupEnabled(), false);
+
   const contextOptions = [];
   await env.hooks.trigger("getSceneContextOptions", null, contextOptions);
   assert.equal(contextOptions.length, 1);
@@ -128,6 +137,24 @@ test("backup helpers normalize payloads, legacy flags, and reconstruction data",
   assert.equal(reconstructed._id, undefined);
   assert.equal(reconstructed.folder, null);
   assert.equal(reconstructed.flags?.[__test__.MODULE_ID], undefined);
+
+  const originalId = "a1B2c3D4e5F6g7H8";
+  const keptBackup = { documentId: originalId, documentName: "Kept", data: { _id: originalId, items: [{ _id: "i1B2c3D4e5F6g7H8" }] } };
+  const kept = __test__.buildReconstructionData(keptBackup, originalId);
+  assert.equal(kept._id, originalId);
+  assert.equal(kept.items[0]._id, "i1B2c3D4e5F6g7H8");
+  assert.equal(kept.name, "Kept");
+  assert.equal(keptBackup.data.name, undefined);
+
+  assert.equal(__test__.isValidDocumentId(originalId), true);
+  assert.equal(__test__.isValidDocumentId("scene-1"), false);
+  assert.equal(__test__.isValidDocumentId(null), false);
+  const freeCollection = { get: () => null };
+  const takenCollection = { get: (id, options) => (options?.invalid && id === originalId ? {} : null) };
+  assert.equal(__test__.getReconstructionId(keptBackup, freeCollection), originalId);
+  assert.equal(__test__.getReconstructionId({ data: { _id: originalId } }, freeCollection), originalId);
+  assert.equal(__test__.getReconstructionId(keptBackup, takenCollection), null);
+  assert.equal(__test__.getReconstructionId({ documentId: "scene-1", data: {} }, freeCollection), null);
 
   const legacyBackups = __test__.getLegacyBackups(liveScene);
   assert.equal(legacyBackups.length, 1);
