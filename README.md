@@ -25,6 +25,7 @@ If the embedded preview is not available in your GitHub view, please check the m
 - Named backups for scenes, actors, items, journal entries, playlists, macros, roll tables, and cards
 - Restore existing documents from a selected backup after a confirmation. The current state is saved as a backup first, so a restore can be undone with one click (world setting "Backup before restore", on by default)
 - Recovery view for deleted documents when matching backups are available. Reconstructed documents keep their original ID, so links, linked tokens and combat entries work again
+- Each backup records the Foundry version and the game system version. When a backup comes from another Foundry generation or system version, the restore shows a warning. The backup list shows these versions as a tooltip
 - Central module interface for backup management and recovery
 - Context menu entry on supported documents for quick access
 - Client-side interface settings for language and design ("Follow Foundry" uses Foundry's language, including community translations)
@@ -35,6 +36,24 @@ If the embedded preview is not available in your GitHub view, please check the m
 1. Enable the module in Foundry.
 2. Open the context menu on any supported document, or launch `Open SCBR` from the module settings.
 3. Create, restore, delete, or reconstruct backups from the unified interface.
+
+## API for macros
+
+Macros and world scripts can use the module through `game.modules.get("sephrals-content-backup-restore").api`. Only a GM can call it. Players get an error.
+
+- `createBackup(document, name)` saves a backup without a dialog and returns its index entry. Without a name the document name is used.
+- `listBackups(document)` returns the backups of a document, newest first. Without a document it returns all backups.
+- `restoreBackup(document, backupId, { confirm })` restores a backup. With `confirm: false` the confirmation dialog is skipped. The world setting "Backup before restore" still applies. It returns `true` after a restore and `false` when the dialog was cancelled.
+- `reconstruct(backupId)` recreates a deleted document from a backup and returns it.
+
+Example: back up all scenes before a session.
+
+```js
+const api = game.modules.get("sephrals-content-backup-restore").api
+const name = `Before session ${new Date().toLocaleDateString()}`
+for (const scene of game.scenes) await api.createBackup(scene, name)
+ui.notifications.info(`${game.scenes.size} scenes backed up.`)
+```
 
 ## Storage and migration
 

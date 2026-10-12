@@ -664,6 +664,16 @@ async function deleteBackupFile(path, { storageRoots=null, url=null } = {}) {
   });
 }
 
+function pickBackupEnvironment(backup) {
+  // Kept in the index too, so the restore confirmation can compare without reading the payload file.
+  return {
+    coreGeneration: backup?.coreGeneration ?? null,
+    coreBuild: backup?.coreBuild ?? null,
+    systemId: backup?.systemId || null,
+    systemVersion: backup?.systemVersion || null
+  };
+}
+
 function normalizeBackupIndex(backup) {
   const path = normalizeStoragePath(backup?.path ?? backup?.filePath);
   if (!path) return null;
@@ -675,7 +685,7 @@ function normalizeBackupIndex(backup) {
     documentName: backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
     documentType: backup.documentType || null,
     createdAt: backup.createdAt || new Date().toISOString(),
-    coreGeneration: backup.coreGeneration ?? null,
+    ...pickBackupEnvironment(backup),
     path
   };
 
@@ -694,7 +704,7 @@ function normalizeBackup(backup) {
     documentName: backup.documentName || localize("scbr.backup.unnamed", "Unnamed Backup"),
     documentType: backup.documentType || null,
     createdAt: backup.createdAt || new Date().toISOString(),
-    coreGeneration: backup.coreGeneration ?? null,
+    ...pickBackupEnvironment(backup),
     path: normalizeStoragePath(backup.path ?? backup.filePath),
     data: foundry.utils.deepClone(backup.data)
   };
@@ -991,6 +1001,46 @@ function getDocumentIdFromContext(target) {
   return dataset?.entryId ?? dataset?.sceneId ?? dataset?.documentId ?? null;
 }
 
+function getWorldEnvironment() {
+  return {
+    coreGeneration: game.release?.generation ?? null,
+    coreBuild: game.release?.build ?? null,
+    systemId: game.system?.id ?? null,
+    systemVersion: game.system?.version ?? null
+  };
+}
+
+function formatEnvironmentLabel(environment, { core=true, system=true, build=false } = {}) {
+  const parts = [];
+  if (core && environment?.coreGeneration != null) {
+    const coreBuild = build && environment.coreBuild != null ? `.${environment.coreBuild}` : "";
+    parts.push(`Foundry ${environment.coreGeneration}${coreBuild}`);
+  }
+  if (system && environment?.systemId) {
+    parts.push([environment.systemId, environment.systemVersion].filter(Boolean).join(" "));
+  }
+  return parts.join(" / ");
+}
+
+function hasEnvironmentMismatch(backup, world=getWorldEnvironment()) {
+  // Only what the backup recorded counts, so older backups without system data never warn about it.
+  const generationDiffers = backup?.coreGeneration != null && world.coreGeneration != null
+    && Number(backup.coreGeneration) !== Number(world.coreGeneration);
+  const systemDiffers = Boolean(backup?.systemId && world.systemId)
+    && (backup.systemId !== world.systemId || Boolean(backup.systemVersion && backup.systemVersion !== world.systemVersion));
+  return generationDiffers || systemDiffers;
+}
+
+function getCompatibilityWarning(backup, world=getWorldEnvironment()) {
+  if (!hasEnvironmentMismatch(backup, world)) return null;
+
+  // Both sides name the same parts, so a backup without system data is not compared against the world system.
+  const parts = { core: backup.coreGeneration != null, system: Boolean(backup.systemId) };
+  const backupEnvironment = formatEnvironmentLabel(backup, parts);
+  const worldEnvironment = formatEnvironmentLabel(world, parts);
+  return format("scbr.backup.versionWarning", { backupEnvironment, worldEnvironment }, `This backup was made with ${backupEnvironment}, this world runs ${worldEnvironment}. Foundry migrates the data, but check the result.`);
+}
+
 function buildBackupPayload(document, name) {
   const data = document.toObject();
   if (data.flags?.[MODULE_ID]) {
@@ -1005,7 +1055,7 @@ function buildBackupPayload(document, name) {
     documentName: getDocumentDisplayName(document),
     documentType: getDocumentType(document),
     createdAt: new Date().toISOString(),
-    coreGeneration: game.release?.generation ?? null,
+    ...getWorldEnvironment(),
     data
   };
 }
@@ -1157,6 +1207,10 @@ async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
   const hint = safetyBackup
     ? localize("scbr.dialog.restoreConfirm.safetyHint", "The current state is saved as a backup first, so you can undo the restore.")
     : localize("scbr.dialog.restoreConfirm.noSafetyHint", "The automatic backup before a restore is turned off in the module settings.");
+  const compatibilityWarning = getCompatibilityWarning(backup);
+  const warningHtml = compatibilityWarning
+    ? `<p class="scbr-compat-warning"><i class="fas fa-triangle-exclamation"></i> ${foundry.utils.escapeHTML(compatibilityWarning)}</p>`
+    : "";
 
   return foundry.applications.api.DialogV2.confirm({
     window: {
@@ -1165,7 +1219,7 @@ async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
     content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.restoreConfirm.body", {
       backupName: formatBackupLabel(backup),
       documentName
-    }, `Restore backup '${formatBackupLabel(backup)}' for '${documentName}'? The current state of the document will be overwritten.`))}</p><p>${foundry.utils.escapeHTML(hint)}</p>`,
+    }, `Restore backup '${formatBackupLabel(backup)}' for '${documentName}'? The current state of the document will be overwritten.`))}</p>${warningHtml}<p>${foundry.utils.escapeHTML(hint)}</p>`,
     yes: {
       label: localize("scbr.dialog.restoreConfirm.confirm", "Restore")
     },
@@ -1177,16 +1231,18 @@ async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
   });
 }
 
-async function restoreBackup(document, backupId) {
+async function restoreBackup(document, backupId, { confirm=true } = {}) {
   const backupIndex = getBackupById(document, backupId);
   if (!backupIndex) {
     ui.notifications.warn(format("scbr.notification.noBackup", { documentName: getDocumentDisplayName(document) }, `No backup exists for '${getDocumentDisplayName(document)}'.`));
-    return;
+    return false;
   }
 
   const safetyEnabled = isSafetyBackupEnabled();
-  const confirmed = await confirmRestore(document, backupIndex, { safetyBackup: safetyEnabled });
-  if (!confirmed) return;
+  if (confirm) {
+    const confirmed = await confirmRestore(document, backupIndex, { safetyBackup: safetyEnabled });
+    if (!confirmed) return false;
+  }
 
   const backup = await readBackupFile(backupIndex);
   const restoreData = buildRestoreData(document, backup);
@@ -1198,19 +1254,24 @@ async function restoreBackup(document, backupId) {
     await canvas.draw();
   }
 
+  // Without the confirmation dialog the version warning goes into a notification instead.
+  const compatibilityWarning = confirm ? null : getCompatibilityWarning(backup);
+  if (compatibilityWarning) ui.notifications.warn(compatibilityWarning);
+
   if (safetyBackup) {
     ui.notifications.info(format("scbr.notification.backupRestoredWithSafety", {
       backupName: formatBackupLabel(backup),
       documentName: getDocumentDisplayName(document),
       safetyName: safetyBackup.name
     }, `Backup '${formatBackupLabel(backup)}' restored for '${getDocumentDisplayName(document)}'. The previous state was saved as '${safetyBackup.name}'.`));
-    return;
+    return true;
   }
 
   ui.notifications.info(format("scbr.notification.backupRestored", {
     backupName: formatBackupLabel(backup),
     documentName: getDocumentDisplayName(document)
   }, `Backup '${formatBackupLabel(backup)}' restored for '${getDocumentDisplayName(document)}'.`));
+  return true;
 }
 
 async function reconstructDocumentFromBackup(backup) {
@@ -1224,6 +1285,10 @@ async function reconstructDocumentFromBackup(backup) {
   const createData = buildReconstructionData(storedBackup, keptId);
   const created = await collection.documentClass.create(createData, { renderSheet: true, keepId: Boolean(keptId) });
   if (!created) return null;
+
+  // Reconstruct has no confirmation dialog, so a version difference is reported here.
+  const compatibilityWarning = getCompatibilityWarning(storedBackup);
+  if (compatibilityWarning) ui.notifications.warn(compatibilityWarning);
 
   // With the original id every backup still points to the document and the index stays valid.
   // Only when that id was taken do the backups move to the new document.
@@ -1556,13 +1621,17 @@ function buildBackupRows(entries, { includeDocumentDetails=false, recoveryMode=f
           ? localize("scbr.manager.available", "Available")
           : localize("scbr.manager.missing", "[deleted]");
         const stateClass = entry.document ? "is-available" : "is-missing";
+        const environmentLabel = formatEnvironmentLabel(entry.backup, { build: true });
+        const environmentTitle = environmentLabel
+          ? ` title="${escapeHtml(format("scbr.backup.madeWith", { environment: environmentLabel }, `Made with ${environmentLabel}`))}"`
+          : "";
         const primaryButton = primaryAction
           ? `<button type="button" class="scbr-inline-action is-primary" data-backup-action="${foundry.utils.escapeHTML(primaryAction.action)}" data-document-id="${foundry.utils.escapeHTML(entry.backup.documentId ?? "")}" data-document-type="${foundry.utils.escapeHTML(entry.backup.documentType ?? "")}" data-backup-id="${foundry.utils.escapeHTML(entry.backup.id)}" aria-label="${foundry.utils.escapeHTML(primaryAction.tooltip)}" title="${foundry.utils.escapeHTML(primaryAction.tooltip)}"><i class="${primaryAction.icon}"></i></button>`
           : "";
 
         return `
           <div class="scbr-backup-row ${stateClass}" data-document-type="${escapeHtml(entry.backup.documentType ?? "")}" data-document-id="${escapeHtml(entry.backup.documentId ?? "")}">
-            <div class="scbr-backup-main">
+            <div class="scbr-backup-main"${environmentTitle}>
               <div class="scbr-backup-line">
                 <span class="scbr-backup-title">${escapeHtml(parts.name)}</span>
                 <span class="scbr-pill is-type">${escapeHtml(typeLabel)}</span>
@@ -1873,6 +1942,58 @@ function createContextOption(documentName) {
   };
 }
 
+function assertApiAccess() {
+  if (!game.user?.isGM) {
+    throw new Error(localize("scbr.api.gmOnly", "Only a GM can use the Sephral’s Content Backup & Restore API."));
+  }
+}
+
+function resolveApiDocument(document) {
+  // Backups point to world documents. Embedded, compendium and synthetic token documents are a different instance.
+  const worldDocument = getDocumentCollection(getDocumentType(document))?.get(document?.id) ?? null;
+  if (!worldDocument || worldDocument !== document) {
+    throw new Error(localize("scbr.api.unsupportedDocument", "Backups only work for scenes, actors, items, journal entries, roll tables, cards, playlists, macros and combats of this world."));
+  }
+  return worldDocument;
+}
+
+function getBackupNotFoundError(backupId) {
+  return new Error(format("scbr.api.backupNotFound", { backupId }, `No backup with the id '${backupId}' was found.`));
+}
+
+function createApi() {
+  // Same actions as the dialog, without prompts, for macros and world scripts. Errors are thrown, not shown.
+  return {
+    async createBackup(document, name) {
+      assertApiAccess();
+      resolveApiDocument(document);
+      const storedBackup = await storeBackup(document, name == null ? undefined : String(name));
+      return normalizeBackupIndex(storedBackup);
+    },
+    listBackups(document) {
+      assertApiAccess();
+      return document == null ? getAllBackups() : getBackups(resolveApiDocument(document));
+    },
+    async restoreBackup(document, backupId, { confirm=true } = {}) {
+      assertApiAccess();
+      resolveApiDocument(document);
+      if (!getBackupById(document, backupId)) throw getBackupNotFoundError(backupId);
+      return restoreBackup(document, backupId, { confirm });
+    },
+    async reconstruct(backupId) {
+      assertApiAccess();
+      const backup = getAllBackups().find((entry) => entry.id === backupId);
+      if (!backup) throw getBackupNotFoundError(backupId);
+      // A live document would lose its backups to the copy, so that case stays a restore.
+      const existing = resolveDocumentForBackup(backup);
+      if (existing) {
+        throw new Error(format("scbr.api.documentExists", { documentName: getDocumentDisplayName(existing) }, `'${getDocumentDisplayName(existing)}' still exists. Restore the backup instead.`));
+      }
+      return reconstructDocumentFromBackup(backup);
+    }
+  };
+}
+
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
 
@@ -1948,6 +2069,8 @@ Hooks.once("init", () => {
     restricted: true
   });
 
+  const module = game.modules.get(MODULE_ID);
+  if (module) module.api = createApi();
 });
 
 Hooks.once("ready", async () => {
@@ -2049,6 +2172,7 @@ export const __test__ = {
   writeBackupFile,
   readBackupFile,
   deleteBackupFile,
+  pickBackupEnvironment,
   normalizeBackupIndex,
   normalizeBackup,
   getStoredBackupSetting,
@@ -2069,6 +2193,10 @@ export const __test__ = {
   migrateLegacyBackups,
   getContextDataset,
   getDocumentIdFromContext,
+  getWorldEnvironment,
+  formatEnvironmentLabel,
+  hasEnvironmentMismatch,
+  getCompatibilityWarning,
   buildBackupPayload,
   sanitizeFlags,
   buildRestoreData,
@@ -2109,5 +2237,9 @@ export const __test__ = {
   getManagerEntries,
   promptForRecoveryType,
   BackupToolMenu,
-  createContextOption
+  createContextOption,
+  assertApiAccess,
+  resolveApiDocument,
+  getBackupNotFoundError,
+  createApi
 };

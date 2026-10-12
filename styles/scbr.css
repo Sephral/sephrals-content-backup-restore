@@ -403,6 +403,18 @@
   border-radius: 12px;
 }
 
+/* The restore confirmation is a plain Foundry dialog, so the warning uses core colors in both themes. */
+.scbr-compat-warning {
+  padding: 0.35rem 0.55rem;
+  border-left: 3px solid var(--color-level-warning, #ee9b3a);
+  border-radius: 4px;
+  background: rgba(238, 155, 58, 0.12);
+}
+
+.scbr-compat-warning i {
+  color: var(--color-level-warning, #ee9b3a);
+}
+
 .scbr-dialog[data-ui-theme="foundry"] .window-content {
   background:
     radial-gradient(circle at top center, rgba(255, 255, 255, 0.05), transparent 24%),
