@@ -1,3 +1,5 @@
+import { registerUsage, countFeature, markUsed } from "./usage.mjs";
+
 const MODULE_ID = "sephrals-content-backup-restore";
 const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
 const STORE_SETTING = "backupStore";
@@ -1201,6 +1203,7 @@ async function createBackup(document) {
   if (name === null) return;
 
   const storedBackup = await storeBackup(document, name);
+  countFeature(MODULE_ID, "backupCreate");
   ui.notifications.info(format("scbr.notification.backupCreated", {
     backupName: formatBackupLabel(storedBackup),
     documentName: getDocumentDisplayName(document)
@@ -1259,6 +1262,8 @@ async function restoreBackup(document, backupId, { confirm=true } = {}) {
   // Keep the current state one click away. If this copy cannot be saved, the restore does not run.
   const safetyBackup = safetyEnabled ? await storeBackup(document, getSafetyBackupName()) : null;
   await document.update(restoreData, { diff: false, recursive: false });
+  countFeature(MODULE_ID, "backupRestore");
+  if (safetyBackup) countFeature(MODULE_ID, "safetyBackup");
 
   if (getDocumentType(document) === "Scene" && canvas?.scene?.id === document.id) {
     await canvas.draw();
@@ -1295,6 +1300,7 @@ async function reconstructDocumentFromBackup(backup) {
   const createData = buildReconstructionData(storedBackup, keptId);
   const created = await collection.documentClass.create(createData, { renderSheet: true, keepId: Boolean(keptId) });
   if (!created) return null;
+  countFeature(MODULE_ID, "documentReconstruct");
 
   // Reconstruct has no confirmation dialog, so a version difference is reported here.
   const compatibilityWarning = getCompatibilityWarning(storedBackup);
@@ -1338,6 +1344,7 @@ async function removeBackupByEntry(backup) {
   const remaining = getAllBackups().filter((entry) => entry.id !== backup.id);
   await deleteBackupFile(backup.path, { url: backup.url });
   await saveBackupStore(remaining);
+  countFeature(MODULE_ID, "backupDelete");
 }
 
 async function removeBackup(document, backupId) {
@@ -1791,6 +1798,7 @@ function buildUnifiedToolbar(state) {
 }
 
 async function openBackupToolDialog({ document=null } = {}) {
+  markUsed(MODULE_ID);
   await ensureModuleTranslationsLoaded();
   const initialType = document ? getDocumentType(document) : await promptForRecoveryType();
   const state = {
@@ -2099,6 +2107,8 @@ function createApi() {
       assertApiAccess();
       resolveApiDocument(document);
       const storedBackup = await storeBackup(document, name == null ? undefined : String(name));
+      countFeature(MODULE_ID, "apiCall");
+      countFeature(MODULE_ID, "backupCreate");
       return normalizeBackupIndex(storedBackup);
     },
     listBackups(document) {
@@ -2109,6 +2119,7 @@ function createApi() {
       assertApiAccess();
       resolveApiDocument(document);
       if (!getBackupById(document, backupId)) throw getBackupNotFoundError(backupId);
+      countFeature(MODULE_ID, "apiCall");
       return restoreBackup(document, backupId, { confirm });
     },
     async reconstruct(backupId) {
@@ -2120,6 +2131,7 @@ function createApi() {
       if (existing) {
         throw new Error(format("scbr.api.documentExists", { documentName: getDocumentDisplayName(existing) }, `'${getDocumentDisplayName(existing)}' still exists. Restore the backup instead.`));
       }
+      countFeature(MODULE_ID, "apiCall");
       return reconstructDocumentFromBackup(backup);
     },
     async runSelfTest(options) {
@@ -2218,6 +2230,11 @@ Hooks.once("init", () => {
     icon: "fa-solid fa-stethoscope",
     type: SelfTestMenu,
     restricted: true
+  });
+
+  registerUsage(MODULE_ID, {
+    features: ["backupCreate", "backupRestore", "safetyBackup", "documentReconstruct", "backupDelete", "apiCall"],
+    settings: [UI_THEME_SETTING, UI_LANGUAGE_SETTING, SAFETY_BACKUP_SETTING]
   });
 
   const module = game.modules.get(MODULE_ID);
