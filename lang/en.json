@@ -53,7 +53,7 @@
   "scbr.recovery.list.emptyDocument": "No backups exist for {documentName}.",
   "scbr.backup.unnamed": "Unnamed Backup",
   "scbr.backup.noDate": "No timestamp",
-  "scbr.backup.safetyName": "Before restore ({timestamp})",
+  "scbr.backup.safetyName": "Before restore",
   "scbr.backup.versionWarning": "This backup was made with {backupEnvironment}, this world runs {worldEnvironment}. Foundry migrates the data, but check the result.",
   "scbr.backup.madeWith": "Made with {environment}",
   "scbr.document.unknown": "Document",
@@ -72,5 +72,18 @@
   "scbr.notification.selectDocument": "Select a live document before creating a backup.",
   "scbr.notification.fileDeleteUnsupported": "Backup metadata was removed, but Foundry does not provide a file-delete API in this runtime. Remove the payload file manually: {filePath}",
   "scbr.notification.unsupportedRecovery": "Recovery is not supported for '{documentType}'.",
-  "scbr.notification.error": "Sephral’s Content Backup & Restore failed: {message}"
+  "scbr.notification.error": "Sephral’s Content Backup & Restore failed: {message}",
+  "scbr.dialog.settings": "Settings",
+  "scbr.selfTest.title": "Content Backup & Restore self test",
+  "scbr.selfTest.run": "Run self test",
+  "scbr.selfTest.hint": "Checks the storage folder, the list of backups and their files. Run it after an update of Foundry.",
+  "scbr.selfTest.passed": "Self test passed: {checks} checks, {backups} backups.",
+  "scbr.selfTest.problems": "Self test: {problems} of {checks} checks failed. See the chat message.",
+  "scbr.selfTest.version": "Foundry {current} (verified {tested})",
+  "scbr.selfTest.newVersions": "Content Backup & Restore was verified with an older Foundry than {versions}. Run the self test in the module settings to check that everything still works.",
+  "scbr.selfTest.collections": "These document types are missing: {types}.",
+  "scbr.selfTest.storage": "The storage folder {folder} could not be created.",
+  "scbr.selfTest.index": "The list of backups could not be read.",
+  "scbr.selfTest.files": "{count} backups are listed but missing from the backup files.",
+  "scbr.selfTest.lock": "The storage lock could not be taken. Another GM may be saving right now."
 }

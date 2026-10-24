@@ -5,6 +5,9 @@ const STORE_LOCK_SETTING = "backupStoreLock";
 const UI_LANGUAGE_SETTING = "uiLanguage";
 const UI_THEME_SETTING = "uiTheme";
 const SAFETY_BACKUP_SETTING = "safetyBackup";
+const ACKNOWLEDGED_VERSIONS_SETTING = "acknowledgedVersions";
+// The Foundry version the module was verified against (see the self-test).
+const TESTED_VERSIONS = Object.freeze({ core: "14.369" });
 const LEGACY_FLAG = "documentBackups";
 const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
 const BACKUP_STORAGE_VERSION = 6;
@@ -167,6 +170,13 @@ function getDocumentTypeLabel(documentOrName) {
   const key = `DOCUMENT.${documentName}`;
   const localized = game.i18n.localize(key);
   return localized === key ? documentName : localized;
+}
+
+// "All Actors" instead of "All Actor": core keeps the plural label in the document metadata.
+function getDocumentTypePluralLabel(documentName) {
+  const key = globalThis.CONFIG?.[documentName]?.documentClass?.metadata?.labelPlural ?? `DOCUMENT.${documentName}s`;
+  const localized = game.i18n.localize(key);
+  return localized === key ? getDocumentTypeLabel(documentName) : localized;
 }
 
 function getDocumentDisplayName(document) {
@@ -1197,9 +1207,9 @@ async function createBackup(document) {
   }, `Backup '${formatBackupLabel(storedBackup)}' created for '${getDocumentDisplayName(document)}'.`));
 }
 
+// The list and the summary show the time of every backup, so the name leaves it out.
 function getSafetyBackupName() {
-  const timestamp = getTimestampString(new Date().toISOString());
-  return format("scbr.backup.safetyName", { timestamp }, `Before restore (${timestamp})`);
+  return localize("scbr.backup.safetyName", "Before restore");
 }
 
 async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
@@ -1462,7 +1472,7 @@ function getDocumentPickerOptions(documentType, selectedDocumentId, preferredDoc
   }
 
   const sortedOptions = Array.from(optionMap.values()).sort((left, right) => left.name.localeCompare(right.name, getLocaleForModule()));
-  const allLabel = format("scbr.filter.document.all", { documentType: getDocumentTypeLabel(documentType) }, `All ${getDocumentTypeLabel(documentType)}`);
+  const allLabel = format("scbr.filter.document.all", { documentType: getDocumentTypePluralLabel(documentType) }, `All ${getDocumentTypePluralLabel(documentType)}`);
 
   return [
     `<option value="">${escapeHtml(allLabel)}</option>`,
@@ -1581,7 +1591,7 @@ function getUnifiedDialogState({ documentType, documentId, entries }) {
   } else if (documentId) {
     summary = format("scbr.recovery.list.hintDocument", { documentName: selectedDocumentName }, `Deleted document backups for ${selectedDocumentName}.`);
   } else {
-    summary = format("scbr.recovery.list.hintType", { documentType: typeLabel }, `All backups for ${typeLabel}.`);
+    summary = format("scbr.recovery.list.hintType", { documentType: getDocumentTypePluralLabel(documentType) }, `All backups for ${getDocumentTypePluralLabel(documentType)}.`);
     title = typeLabel;
     sectionLabel = format("scbr.recovery.list.label", { documentType: typeLabel }, `${typeLabel} backups`);
   }
@@ -1683,13 +1693,14 @@ function updateUnifiedDialogFilter(dialog, state, entries) {
     if (matches) visibleCount += 1;
   }
 
+  // Without any backup the general empty state already says so
   const emptyState = dialog.element.querySelector(".scbr-filter-empty");
-  if (emptyState) emptyState.hidden = visibleCount > 0;
+  if (emptyState) emptyState.hidden = (visibleCount > 0) || !visibleRows.length;
   const emptyCopy = dialog.element.querySelector(".scbr-filter-empty .scbr-empty-copy");
   if (emptyCopy) {
     emptyCopy.textContent = state.documentId
       ? format("scbr.recovery.list.emptyDocument", { documentName: derived.selectedDocumentName }, `No backups exist for ${derived.selectedDocumentName}.`)
-      : format("scbr.recovery.list.empty", { documentType: derived.typeLabel }, `No backups exist for ${derived.typeLabel}.`);
+      : format("scbr.recovery.list.empty", { documentType: getDocumentTypePluralLabel(state.documentType) }, `No backups exist for ${getDocumentTypePluralLabel(state.documentType)}.`);
   }
 
   const heading = dialog.element.querySelector(".scbr-dynamic-title");
@@ -1805,12 +1816,12 @@ async function openBackupToolDialog({ document=null } = {}) {
       toolbarHtml: buildUnifiedToolbar(state),
       rowsHtml: `
         ${buildBackupRows(entries, { includeDocumentDetails: true, recoveryMode: true })}
-        <div class="scbr-empty-state scbr-filter-empty"${derived.filteredEntries.length ? " hidden" : ""}>
+        <div class="scbr-empty-state scbr-filter-empty"${(!entries.length || derived.filteredEntries.length) ? " hidden" : ""}>
           <div class="scbr-empty-icon"><i class="fas fa-box-open"></i></div>
           <div class="scbr-empty-title">${escapeHtml(localize("scbr.manager.emptyTitle", "No backups yet"))}</div>
           <p class="scbr-empty-copy">${escapeHtml(state.documentId
             ? format("scbr.recovery.list.emptyDocument", { documentName: derived.selectedDocumentName }, `No backups exist for ${derived.selectedDocumentName}.`)
-            : format("scbr.recovery.list.empty", { documentType: derived.typeLabel }, `No backups exist for ${derived.typeLabel}.`))}</p>
+            : format("scbr.recovery.list.empty", { documentType: getDocumentTypePluralLabel(state.documentType) }, `No backups exist for ${getDocumentTypePluralLabel(state.documentType)}.`))}</p>
         </div>
       `
     });
@@ -1822,6 +1833,7 @@ async function openBackupToolDialog({ document=null } = {}) {
       width: 1180,
       height: 820,
       onRender: (dialog) => {
+        addSettingsGear(dialog);
         const typeSelect = dialog.element.querySelector(".scbr-type-select");
         const documentSelect = dialog.element.querySelector(".scbr-document-select");
 
@@ -1961,6 +1973,125 @@ function getBackupNotFoundError(backupId) {
   return new Error(format("scbr.api.backupNotFound", { backupId }, `No backup with the id '${backupId}' was found.`));
 }
 
+// Self-test: the document collections, the storage folder, the backup index and its files, and the storage lock.
+// Meant to be run after every Foundry update; the GM also gets a notice once when a newer Foundry is installed.
+async function checkIntegrations() {
+  const problems = [];
+  let checks = 0;
+  const check = (ok, key, data, fallback) => {
+    checks++;
+    if (!ok) problems.push(format(`scbr.selfTest.${key}`, data, fallback));
+  };
+
+  const missingTypes = SUPPORTED_DOCUMENTS.filter((config) => !config.getCollection()).map((config) => config.documentName);
+  check(!missingTypes.length, "collections", { types: missingTypes.join(", ") }, "These document types are missing: {types}.");
+
+  if (!isUsingTheForge()) {
+    let storage = true;
+    try {
+      await ensureStorageDirectoryExists("");
+    } catch (error) {
+      storage = false;
+      console.warn(`${MODULE_ID} | Self-test could not create the storage folder`, error);
+    }
+    check(storage, "storage", { folder: getWorldStorageRoot() }, "The storage folder {folder} could not be created.");
+  }
+
+  let indexed = null;
+  try {
+    indexed = getAllBackups();
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Self-test could not read the backup index`, error);
+  }
+  check(Array.isArray(indexed), "index", {}, "The list of backups could not be read.");
+
+  if (indexed?.length) {
+    const found = new Set((await collectBackupsFromTypeFiles(indexed)).map((backup) => backup.id));
+    const missing = indexed.filter((backup) => !found.has(backup.id)).length;
+    check(!missing, "files", { count: missing }, "{count} backups are listed but missing from the backup files.");
+  }
+
+  let lock = true;
+  try {
+    await releaseBackupStoreLock(await acquireBackupStoreLock({ timeoutMs: 3000 }));
+  } catch (error) {
+    lock = false;
+    console.warn(`${MODULE_ID} | Self-test could not take the storage lock`, error);
+  }
+  check(lock, "lock", {}, "The storage lock could not be taken. Another GM may be saving right now.");
+  return { problems, checks, backups: indexed?.length ?? 0 };
+}
+
+// Runs the self-test and reports the result as a notification and a whispered chat message.
+async function runSelfTest({ report=true } = {}) {
+  await ensureModuleTranslationsLoaded();
+  const { problems, checks, backups } = await checkIntegrations();
+  const versions = format("scbr.selfTest.version", { current: game.version, tested: TESTED_VERSIONS.core }, "Foundry {current} (verified {tested})");
+  const summary = problems.length
+    ? format("scbr.selfTest.problems", { problems: problems.length, checks }, "Self test: {problems} of {checks} checks failed. See the chat message.")
+    : format("scbr.selfTest.passed", { checks, backups }, "Self test passed: {checks} checks, {backups} backups.");
+
+  if (problems.length) ui.notifications.warn(summary, { permanent: true });
+  else ui.notifications.info(summary);
+
+  if (report) {
+    let content = `<h3>${escapeHtml(localize("scbr.selfTest.title", "Content Backup & Restore self test"))}</h3><p>${escapeHtml(summary)}</p><p><small>${escapeHtml(versions)}</small></p>`;
+    if (problems.length) content += `<ul>${problems.map((problem) => `<li>${escapeHtml(problem)}</li>`).join("")}</ul>`;
+    await ChatMessage.implementation.create({ content, whisper: [game.user.id], speaker: { alias: game.modules.get(MODULE_ID)?.title } });
+  }
+  return { problems, checks };
+}
+
+// Tells the GM once when Foundry is newer than the version the module was verified against.
+function noticeNewVersions() {
+  if (!game.user?.isGM || !foundry.utils.isNewerVersion(game.version, TESTED_VERSIONS.core)) return;
+  const signature = `core ${game.version}`;
+  if (game.settings.get(MODULE_ID, ACKNOWLEDGED_VERSIONS_SETTING) === signature) return;
+  game.settings.set(MODULE_ID, ACKNOWLEDGED_VERSIONS_SETTING, signature);
+  ui.notifications.info(format("scbr.selfTest.newVersions", { versions: signature }, "Content Backup & Restore was verified with an older Foundry than {versions}. Run the self test in the module settings to check that everything still works."), { permanent: true });
+}
+
+// The menu button which runs the self-test. Foundry only accepts application classes as menus.
+class SelfTestMenu extends foundry.applications.api.ApplicationV2 {
+  async render() {
+    if (game.user.isGM) await runSelfTest();
+    return this;
+  }
+}
+
+// Opens Foundry's settings on the tab of this module.
+async function openModuleSettings() {
+  const sheet = game.settings.sheet;
+  await sheet.render({ force: true });
+  try {
+    sheet.changeTab(MODULE_ID, "categories");
+  } catch (error) {
+    console.warn(`${MODULE_ID} | The settings have no tab for this module`, error);
+  }
+  sheet.bringToFront?.();
+}
+
+// A gear in the title bar of the backup window. The window is modal, so it closes before the settings open.
+function addSettingsGear(dialog) {
+  const header = dialog.element?.querySelector(".window-header");
+  if (!header || header.querySelector(".scbr-settings")) return;
+  const label = localize("scbr.dialog.settings", "Settings");
+  const gear = document.createElement("button");
+  gear.type = "button";
+  gear.className = "header-control icon fa-solid fa-gear scbr-settings";
+  gear.dataset.tooltip = label;
+  gear.setAttribute("aria-label", label);
+  gear.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    await dialog.close();
+    await openModuleSettings();
+  });
+  const anchor = header.querySelector("[data-action=toggleControls]") ?? header.querySelector("[data-action=close]");
+  if (anchor) anchor.before(gear);
+  else header.append(gear);
+}
+
 function createApi() {
   // Same actions as the dialog, without prompts, for macros and world scripts. Errors are thrown, not shown.
   return {
@@ -1990,6 +2121,10 @@ function createApi() {
         throw new Error(format("scbr.api.documentExists", { documentName: getDocumentDisplayName(existing) }, `'${getDocumentDisplayName(existing)}' still exists. Restore the backup instead.`));
       }
       return reconstructDocumentFromBackup(backup);
+    },
+    async runSelfTest(options) {
+      assertApiAccess();
+      return runSelfTest(options);
     }
   };
 }
@@ -2060,12 +2195,28 @@ Hooks.once("init", () => {
     default: true
   });
 
+  game.settings.register(MODULE_ID, ACKNOWLEDGED_VERSIONS_SETTING, {
+    scope: "client",
+    config: false,
+    type: String,
+    default: ""
+  });
+
   game.settings.registerMenu(MODULE_ID, "backupTool", {
     name: localize("scbr.settings.tool.name", "Sephral’s Content Backup & Restore"),
     label: localize("scbr.settings.tool.label", "Open SCBR"),
     hint: localize("scbr.settings.tool.hint", "Open the unified backup dialog for all supported world documents."),
     icon: "fas fa-box-archive",
     type: BackupToolMenu,
+    restricted: true
+  });
+
+  game.settings.registerMenu(MODULE_ID, "selfTest", {
+    name: localize("scbr.selfTest.title", "Content Backup & Restore self test"),
+    label: localize("scbr.selfTest.run", "Run self test"),
+    hint: localize("scbr.selfTest.hint", "Checks the storage folder, the list of backups and their files. Run it after an update of Foundry."),
+    icon: "fa-solid fa-stethoscope",
+    type: SelfTestMenu,
     restricted: true
   });
 
@@ -2077,6 +2228,7 @@ Hooks.once("ready", async () => {
   await ensureModuleTranslationsLoaded();
   // Backups are GM-only; the migration rewrites world settings and files players may not write.
   if (game.user?.isGM) await migrateLegacyBackups();
+  noticeNewVersions();
 });
 
 for (const config of SUPPORTED_DOCUMENTS) {

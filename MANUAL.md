@@ -22,6 +22,9 @@ Supported documents: scenes, actors, items, journal entries, playlists, macros, 
 * *Language* follows Foundry (including community translations) or uses English or German. Personal setting.
 * *Design* switches the window between *Signature* and *Foundry Default*. Personal setting.
 * *Backup before restore* saves the current state before every restore. World setting, on by default.
+* *Run self test* checks the storage folder, the list of backups and their files. Run it after every Foundry update. When a newer Foundry than the tested one is installed, the GM gets a notice once.
+
+The gear in the title bar of the backup window opens these settings.
 
 ## Where backups are kept
 
@@ -37,6 +40,7 @@ GMs can create and restore backups from macros through `game.modules.get("sephra
 * `listBackups(document)` returns the backups of a document, newest first. Without a document it returns all backups.
 * `restoreBackup(document, backupId, { confirm })` restores a backup. With `confirm: false` the confirmation dialog is skipped. *Backup before restore* still applies. It returns `true` after a restore and `false` when the dialog was cancelled.
 * `reconstruct(backupId)` recovers a deleted document from a backup and returns it.
+* `runSelfTest()` runs the self test and returns the problems it found.
 
 Example: back up all scenes before a session.
 

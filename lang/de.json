@@ -53,7 +53,7 @@
   "scbr.recovery.list.emptyDocument": "Es existieren keine Backups für {documentName}.",
   "scbr.backup.unnamed": "Unbenanntes Backup",
   "scbr.backup.noDate": "Kein Zeitstempel",
-  "scbr.backup.safetyName": "Vor Wiederherstellung ({timestamp})",
+  "scbr.backup.safetyName": "Vor der Wiederherstellung",
   "scbr.backup.versionWarning": "Dieses Backup wurde mit {backupEnvironment} erstellt, diese Welt läuft mit {worldEnvironment}. Foundry migriert die Daten, prüfe aber das Ergebnis.",
   "scbr.backup.madeWith": "Erstellt mit {environment}",
   "scbr.document.unknown": "Dokument",
@@ -72,5 +72,18 @@
   "scbr.notification.selectDocument": "Wähle ein vorhandenes Dokument aus, bevor Du ein Backup erstellst.",
   "scbr.notification.fileDeleteUnsupported": "Die Backup-Metadaten wurden entfernt, aber Foundry stellt in dieser Laufzeit keine API zum Löschen von Dateien bereit. Entferne die Backup-Datei manuell: {filePath}",
   "scbr.notification.unsupportedRecovery": "Wiederherstellung wird für '{documentType}' nicht unterstützt.",
-  "scbr.notification.error": "Sephral’s Content Backup & Restore fehlgeschlagen: {message}"
+  "scbr.notification.error": "Sephral’s Content Backup & Restore fehlgeschlagen: {message}",
+  "scbr.dialog.settings": "Einstellungen",
+  "scbr.selfTest.title": "Content Backup & Restore Selbsttest",
+  "scbr.selfTest.run": "Selbsttest starten",
+  "scbr.selfTest.hint": "Prüft den Speicherordner, die Liste der Backups und ihre Dateien. Nach jedem Update von Foundry ausführen.",
+  "scbr.selfTest.passed": "Selbsttest bestanden: {checks} Prüfungen, {backups} Backups.",
+  "scbr.selfTest.problems": "Selbsttest: {problems} von {checks} Prüfungen fehlgeschlagen. Details im Chat.",
+  "scbr.selfTest.version": "Foundry {current} (geprüft {tested})",
+  "scbr.selfTest.newVersions": "Content Backup & Restore wurde mit einem älteren Foundry als {versions} geprüft. Der Selbsttest in den Moduleinstellungen zeigt, ob noch alles funktioniert.",
+  "scbr.selfTest.collections": "Diese Dokumenttypen fehlen: {types}.",
+  "scbr.selfTest.storage": "Der Speicherordner {folder} ließ sich nicht anlegen.",
+  "scbr.selfTest.index": "Die Liste der Backups ließ sich nicht lesen.",
+  "scbr.selfTest.files": "{count} Backups stehen in der Liste, fehlen aber in den Backupdateien.",
+  "scbr.selfTest.lock": "Die Speichersperre ließ sich nicht setzen. Vielleicht speichert gerade eine andere SL."
 }

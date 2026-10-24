@@ -344,6 +344,18 @@
   border-radius: 10px;
 }
 
+/* Signature: light selects like the text inputs, core paints them dark */
+.scbr-dialog:not([data-ui-theme="foundry"]) .scbr-select {
+  border: 1px solid rgba(81, 59, 43, 0.18);
+  background-color: rgba(255, 255, 255, 0.94);
+  color: var(--scbr-ink);
+}
+
+.scbr-dialog:not([data-ui-theme="foundry"]) .scbr-select option {
+  background: #fffaf0;
+  color: var(--scbr-ink);
+}
+
 .scbr-input-panel {
   display: flex;
   flex-direction: column;
@@ -401,6 +413,31 @@
 
 .scbr-dialog .form-footer button {
   border-radius: 12px;
+}
+
+/* Signature: the core buttons are dark and see-through, which reads as disabled on the light paper */
+.scbr-dialog:not([data-ui-theme="foundry"]) .form-footer button {
+  border: 1px solid var(--scbr-line);
+  background: var(--scbr-paper);
+  color: var(--scbr-ink);
+  font-weight: 600;
+}
+
+.scbr-dialog:not([data-ui-theme="foundry"]) .form-footer button[autofocus] {
+  border-color: transparent;
+  background: linear-gradient(180deg, #c8643a 0%, var(--scbr-accent) 100%);
+  color: #fffaf0;
+}
+
+.scbr-dialog:not([data-ui-theme="foundry"]) .form-footer button:hover,
+.scbr-dialog:not([data-ui-theme="foundry"]) .form-footer button:focus-visible {
+  box-shadow: 0 0 0 2px var(--scbr-accent-soft);
+  filter: brightness(1.04);
+}
+
+.scbr-dialog:not([data-ui-theme="foundry"]) .form-footer button:disabled {
+  opacity: 0.5;
+  filter: none;
 }
 
 /* The restore confirmation is a plain Foundry dialog, so the warning uses core colors in both themes. */

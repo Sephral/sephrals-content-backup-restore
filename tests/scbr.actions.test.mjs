@@ -536,7 +536,7 @@ test("restore saves the current state as a safety backup before it overwrites th
   const backups = __test__.getBackups(scene);
   assert.equal(backups.length, 2);
   const safety = backups.find((entry) => entry.id !== "backup-1");
-  assert.match(safety.name, /^Before restore \(.+\)$/);
+  assert.equal(safety.name, "Before restore");
   const stored = storage.files.get("worlds/test-world/scbr/Scene.json").backups.find((entry) => entry.id === safety.id);
   assert.equal(stored.data.width, 4000);
   assert.equal(env.state.notifications.info.at(-1).includes(`The previous state was saved as '${safety.name}'`), true);

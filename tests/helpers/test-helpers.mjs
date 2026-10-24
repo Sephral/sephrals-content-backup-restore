@@ -320,6 +320,14 @@ export function createTestEnvironment() {
       },
       escapeHTML: escapeHtml,
       getProperty,
+      isNewerVersion(version, other) {
+        const parts = (value) => String(value ?? "").split(".").map(Number);
+        const [a, b] = [parts(version), parts(other)];
+        for (let i = 0; i < Math.max(a.length, b.length); i++) {
+          if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) > (b[i] ?? 0);
+        }
+        return false;
+      },
       randomID() {
         state.randomIdCounter += 1;
         return `random-${state.randomIdCounter}`;
