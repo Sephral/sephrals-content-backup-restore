@@ -2,7 +2,7 @@
   "id": "sephrals-content-backup-restore",
   "title": "Sephral’s Content Backup & Restore",
   "description": "Create, restore, delete, and recover backups for scenes, actors, items, journals, playlists, macros, combats, roll tables, and cards.",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "compatibility": {
     "minimum": 13,
     "verified": "14.369"
