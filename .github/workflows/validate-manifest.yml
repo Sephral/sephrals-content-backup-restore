@@ -9,9 +9,12 @@ on:
       - "lang/**"
       - "scripts/**"
       - "styles/**"
+      - "templates/**"
       - "README.md"
+      - "MANUAL.md"
       - "LICENSE.md"
       - "build/validate-manifest.mjs"
+      - ".github/workflows/validate-manifest.yml"
   pull_request:
     paths:
       - "module.json"
@@ -19,9 +22,12 @@ on:
       - "lang/**"
       - "scripts/**"
       - "styles/**"
+      - "templates/**"
       - "README.md"
+      - "MANUAL.md"
       - "LICENSE.md"
       - "build/validate-manifest.mjs"
+      - ".github/workflows/validate-manifest.yml"
 
 jobs:
   validate-manifest:
