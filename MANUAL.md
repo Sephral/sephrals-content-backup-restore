@@ -26,6 +26,19 @@ Supported documents: scenes, actors, items, journal entries, playlists, macros, 
 
 The gear in the title bar of the backup window opens these settings.
 
+## Usage statistics
+
+The module can take part in a small usage report shared by all of Sephral’s modules. Nothing is counted or sent until the GM agrees: shortly after the world starts, the active GM is asked, and the question comes back at every start until there is an answer. The answer counts for all of Sephral’s modules in the world. *Share usage statistics* in the module settings turns the report on or off at any time, and *Manage statistics* below it shows what the report contains right now.
+
+With the GM’s consent only the active GM’s browser counts, and it sends at most one report a day. The question lists everything the report contains, from the Foundry version to a random world ID. For Content Backup & Restore it holds:
+
+* on how many of the last 30 days the module was used
+* how often backups are created, restored and deleted, a safety backup is made before a restore, single documents are rebuilt from a backup and macros call the module
+* the settings *Design*, *Language* and *Backup before restore* (only the chosen option)
+* where errors occur in the module code: file, line and error type, never the error message
+
+No names, chat messages, notes, dice results or other content of the world are sent.
+
 ## Where backups are kept
 
 Backups are saved as files in your world folder, in the subfolder `scbr`. They travel with the world, so a copy of the world folder includes them.
