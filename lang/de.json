@@ -74,7 +74,7 @@
   "scbr.notification.unsupportedRecovery": "Wiederherstellung wird für '{documentType}' nicht unterstützt.",
   "scbr.notification.error": "Sephral’s Content Backup & Restore fehlgeschlagen: {message}",
   "scbr.dialog.settings": "Einstellungen",
-  "scbr.selfTest.title": "Content Backup & Restore Selbsttest",
+  "scbr.selfTest.title": "Selbsttest von Content Backup & Restore",
   "scbr.selfTest.run": "Selbsttest starten",
   "scbr.selfTest.hint": "Prüft den Speicherordner, die Liste der Backups und ihre Dateien. Nach jedem Update von Foundry ausführen.",
   "scbr.selfTest.passed": "Selbsttest bestanden: {checks} Prüfungen, {backups} Backups.",
