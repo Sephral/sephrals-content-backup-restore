@@ -23,6 +23,7 @@ Supported documents: scenes, actors, items, journal entries, playlists, macros, 
 * *Design* switches the window between *Signature* and *Foundry Default*. Personal setting.
 * *Backup before restore* saves the current state before every restore. World setting, on by default.
 * *Run self test* checks the storage folder, the list of backups and their files. Run it after every Foundry update. When a newer Foundry than the tested one is installed, the GM gets a notice once.
+* *Save debug file* saves a file for bug reports, see [Debug file](#debug-file).
 
 The gear in the title bar of the backup window opens these settings.
 
@@ -39,6 +40,12 @@ With the GM’s consent only the active GM’s browser counts, and it sends at m
 
 No names, chat messages, notes, dice results or other content of the world are sent.
 
+## Debug file
+
+For bug reports, the GM saves one file about all of Sephral’s modules in this world: `Save debug file` in the module settings, or `Save Debug File (Sephral’s Modules)` in the context menu of a chat message. It holds the versions of Foundry, the system and the active modules, the settings of the modules and what they recorded, for Content Backup & Restore the storage folder, the number of backups per document type, backups whose document is gone and the storage lock. Backup names and document data are left out. Macros call `game.modules.get("sephrals-content-backup-restore").api.saveDebugFile()`.
+
+The file contains chat text and whispers. Check it before you share it.
+
 ## Where backups are kept
 
 Backups are saved as files in your world folder, in the subfolder `scbr`. They travel with the world, so a copy of the world folder includes them.
@@ -54,6 +61,7 @@ GMs can create and restore backups from macros through `game.modules.get("sephra
 * `restoreBackup(document, backupId, { confirm })` restores a backup. With `confirm: false` the confirmation dialog is skipped. *Backup before restore* still applies. It returns `true` after a restore and `false` when the dialog was cancelled.
 * `reconstruct(backupId)` recovers a deleted document from a backup and returns it.
 * `runSelfTest()` runs the self test and returns the problems it found.
+* `saveDebugFile()` saves the debug file, see [Debug file](#debug-file).
 
 Example: back up all scenes before a session.
 

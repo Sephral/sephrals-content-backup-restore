@@ -33,6 +33,16 @@ test("registers SCBR settings, menu, ready migration, and context options", asyn
   assert.equal(env.state.registerCalls.some((entry) => entry.moduleId === __test__.MODULE_ID && entry.settingKey === __test__.STORE_SETTING), true);
   assert.equal(env.state.registerCalls.some((entry) => entry.moduleId === __test__.MODULE_ID && entry.settingKey === __test__.UI_LANGUAGE_SETTING), true);
   assert.equal(env.state.registerMenuCalls.some((entry) => entry.moduleId === __test__.MODULE_ID && entry.key === "backupTool"), true);
+  // The debug file of Sephral's modules: the settings button and the part of this module, without the backup index
+  const debugMenu = env.state.registerMenuCalls.find((entry) => entry.moduleId === __test__.MODULE_ID && entry.key === "debugFile");
+  assert.equal(debugMenu?.config.restricted, true);
+  const provider = globalThis.sephralsDebugFiles?.providers.get(__test__.MODULE_ID);
+  assert.deepEqual(provider?.omitSettings, [__test__.STORE_SETTING]);
+  assert.equal(typeof provider?.recent, "function");
+  assert.equal(provider.message, undefined);
+  const { details } = provider.recent();
+  assert.deepEqual(details.index, { version: __test__.BACKUP_STORAGE_VERSION, backups: 0, byType: {}, withoutDocument: 0, latest: null });
+  assert.equal(details.lock.held, false);
 
   const safetySetting = env.state.registerCalls.find((entry) => entry.moduleId === __test__.MODULE_ID && entry.settingKey === __test__.SAFETY_BACKUP_SETTING);
   assert.equal(safetySetting.config.scope, "world");

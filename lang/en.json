@@ -85,5 +85,10 @@
   "scbr.selfTest.storage": "The storage folder {folder} could not be created.",
   "scbr.selfTest.index": "The list of backups could not be read.",
   "scbr.selfTest.files": "{count} backups are listed but missing from the backup files.",
-  "scbr.selfTest.lock": "The storage lock could not be taken. Another GM may be saving right now."
+  "scbr.selfTest.lock": "The storage lock could not be taken. Another GM may be saving right now.",
+  "scbr.debug.Title": "Debug file",
+  "scbr.debug.Save": "Save debug file",
+  "scbr.debug.Hint": "Saves one file for bug reports about all of Sephral’s modules in this world: versions, settings and what the modules recorded, such as the latest chat messages they read. It contains chat text and whispers, check it before you share it.",
+  "scbr.debug.Entry": "Save Debug File (Sephral’s Modules)",
+  "scbr.debug.Saved": "Debug file {file} saved. It contains chat text and whispers, check it before you share it."
 }

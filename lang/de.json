@@ -85,5 +85,10 @@
   "scbr.selfTest.storage": "Der Speicherordner {folder} ließ sich nicht anlegen.",
   "scbr.selfTest.index": "Die Liste der Backups ließ sich nicht lesen.",
   "scbr.selfTest.files": "{count} Backups stehen in der Liste, fehlen aber in den Backupdateien.",
-  "scbr.selfTest.lock": "Die Speichersperre ließ sich nicht setzen. Vielleicht speichert gerade eine andere SL."
+  "scbr.selfTest.lock": "Die Speichersperre ließ sich nicht setzen. Vielleicht speichert gerade eine andere SL.",
+  "scbr.debug.Title": "Debug-Datei",
+  "scbr.debug.Save": "Debug-Datei speichern",
+  "scbr.debug.Hint": "Speichert eine Datei für Fehlerberichte über alle Module von Sephral in dieser Welt: Versionen, Einstellungen und was die Module aufgezeichnet haben, etwa die letzten Chatnachrichten, die sie gelesen haben. Sie enthält Chattext und Flüsternachrichten, prüfe sie vor dem Teilen.",
+  "scbr.debug.Entry": "Debug-Datei speichern (Sephral’s Module)",
+  "scbr.debug.Saved": "Debug-Datei {file} gespeichert. Sie enthält Chattext und Flüsternachrichten, prüfe sie vor dem Teilen."
 }

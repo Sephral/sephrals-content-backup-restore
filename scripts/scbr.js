@@ -1,4 +1,5 @@
 import { registerUsage, countFeature, markUsed } from "./usage.mjs";
+import { registerDebugMenu, registerDebugProvider, saveDebugFile as saveSharedDebugFile } from "./debug-file.mjs";
 
 const MODULE_ID = "sephrals-content-backup-restore";
 const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
@@ -2030,6 +2031,45 @@ async function checkIntegrations() {
   return { problems, checks, backups: indexed?.length ?? 0 };
 }
 
+// Content Backup & Restore's part of the debug file of Sephral's modules: where the backups are stored, the index in
+// numbers, backups left over in the old module id and the storage lock. No backup names or document data.
+function describeDebugState() {
+  const details = {
+    storage: { source: getStorageSource(), root: getWorldStorageRoot(), forge: isUsingTheForge() },
+    index: null,
+    legacy: {},
+    lock: null
+  };
+  try {
+    const store = getBackupStore();
+    const byType = {};
+    let withoutDocument = 0;
+    for (const backup of store.backups) {
+      const type = backup.documentType ?? "unknown";
+      byType[type] = (byType[type] ?? 0) + 1;
+      if (!resolveDocumentForBackup(backup)) withoutDocument++;
+    }
+    const latest = store.backups.map((backup) => backup.createdAt).filter(Boolean).sort().at(-1) ?? null;
+    details.index = { version: store.version, backups: store.backups.length, byType, withoutDocument, latest };
+  } catch (error) {
+    details.index = { error: String(error?.message ?? error) };
+  }
+  for (const legacyModuleId of LEGACY_MODULE_IDS) {
+    try {
+      details.legacy[legacyModuleId] = getStoredBackupSetting(legacyModuleId)?.backups?.length ?? 0;
+    } catch (error) {
+      details.legacy[legacyModuleId] = String(error?.message ?? error);
+    }
+  }
+  try {
+    const lock = game.settings.get(MODULE_ID, STORE_LOCK_SETTING);
+    details.lock = { owner: lock?.owner ?? null, held: Boolean(lock?.token) && (lock?.expiresAt ?? 0) > Date.now(), acquiredAt: lock?.acquiredAt ?? null, expiresAt: lock?.expiresAt ?? 0 };
+  } catch (error) {
+    details.lock = { error: String(error?.message ?? error) };
+  }
+  return { details };
+}
+
 // Runs the self-test and reports the result as a notification and a whispered chat message.
 async function runSelfTest({ report=true } = {}) {
   await ensureModuleTranslationsLoaded();
@@ -2137,6 +2177,11 @@ function createApi() {
     async runSelfTest(options) {
       assertApiAccess();
       return runSelfTest(options);
+    },
+    // One file for all of Sephral's modules, without a message id about their latest picture
+    async saveDebugFile(messageId) {
+      assertApiAccess();
+      return saveSharedDebugFile(messageId ?? null, { moduleId: MODULE_ID });
     }
   };
 }
@@ -2232,6 +2277,20 @@ Hooks.once("init", () => {
     restricted: true
   });
 
+  registerDebugMenu(MODULE_ID, {
+    name: localize("scbr.debug.Title", "Debug file"),
+    label: localize("scbr.debug.Save", "Save debug file"),
+    hint: localize("scbr.debug.Hint", "Saves one file for bug reports about all of Sephral’s modules in this world.")
+  });
+  // The index setting holds backup and document names, the debug file gets its numbers instead.
+  registerDebugProvider({
+    moduleId: MODULE_ID,
+    label: () => localize("scbr.debug.Entry", "Save Debug File (Sephral’s Modules)"),
+    notice: (file) => format("scbr.debug.Saved", { file }, `Debug file ${file} saved.`),
+    recent: describeDebugState,
+    omitSettings: [STORE_SETTING]
+  });
+
   registerUsage(MODULE_ID, {
     features: ["backupCreate", "backupRestore", "safetyBackup", "documentReconstruct", "backupDelete", "apiCall"],
     settings: [UI_THEME_SETTING, UI_LANGUAGE_SETTING, SAFETY_BACKUP_SETTING]
@@ -2285,6 +2344,7 @@ export const __test__ = {
   getModuleLanguage,
   getOverrideLanguage,
   getModuleTranslationOverride,
+  describeDebugState,
   loadModuleTranslations,
   ensureModuleTranslationsLoaded,
   resetModuleTranslationState,
