@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "check": "node build/check.mjs",
+    "check:manifest": "node build/validate-manifest.mjs",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check scripts/scbr.js && node --check scripts/debug-file.mjs",
-    "check:manifest": "node build/validate-manifest.mjs",
     "release:prepare": "node build/prepare-release.mjs"
   },
   "engines": {

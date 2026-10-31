@@ -1,5 +1,6 @@
 import { registerUsage, countFeature, markUsed } from "./usage.mjs";
 import { registerDebugMenu, registerDebugProvider, saveDebugFile as saveSharedDebugFile } from "./debug-file.mjs";
+import { registerHubModule } from "./hub.mjs";
 
 const MODULE_ID = "sephrals-content-backup-restore";
 const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
@@ -2188,6 +2189,8 @@ function createApi() {
 
 Hooks.once("init", () => {
   console.log(`${MODULE_ID} | Initializing`);
+
+  registerHubModule({ moduleId: MODULE_ID, tested: TESTED_VERSIONS });
 
   for (const legacyModuleId of LEGACY_MODULE_IDS) {
     game.settings.register(legacyModuleId, STORE_SETTING, {

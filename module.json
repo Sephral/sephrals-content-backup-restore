@@ -9,9 +9,11 @@
   },
   "authors": [
     {
-      "name": "Sephral"
+      "name": "Sephral",
+      "url": "https://github.com/Sephral"
     }
   ],
+  "url": "https://github.com/Sephral/sephrals-content-backup-restore.git",
   "esmodules": [
     "scripts/scbr.js"
   ],
@@ -29,6 +31,5 @@
       "name": "Deutsch",
       "path": "lang/de.json"
     }
-  ],
-  "url": "https://github.com/Sephral/sephrals-content-backup-restore.git"
+  ]
 }
