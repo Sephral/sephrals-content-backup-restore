@@ -65,6 +65,46 @@ test("registers SCBR settings, menu, ready migration, and context options", asyn
   env.cleanup();
 });
 
+const ORPHAN_INDEX_ENTRY = { id: "orphan-1", documentId: "scene-1", documentName: "Scene One", documentType: "Scene", createdAt: "2024-01-01T00:00:00.000Z", path: "Scene.json#orphan-1" };
+
+test("ready keeps index entries whose file is gone instead of rejecting", async (t) => {
+  const env = createTestEnvironment();
+  const warn = t.mock.method(console, "warn", () => {});
+  const { __test__ } = await importModule("scripts/scbr.js");
+  await env.hooks.trigger("init");
+
+  // The index names a backup, but the world has no scbr folder (copied world without it).
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, { version: 6, backups: [ORPHAN_INDEX_ENTRY] });
+  await env.hooks.trigger("ready");
+
+  assert.equal(env.hooks.errors.length, 0);
+  assert.equal(warn.mock.calls.some((call) => String(call.arguments[0]).includes("Scene.json#orphan-1")), true);
+  assert.deepEqual(__test__.getAllBackups().map((entry) => entry.id), ["orphan-1"]);
+  assert.equal(env.state.uploadCalls.length, 0);
+
+  env.cleanup();
+});
+
+test("ready reports other migration failures to the error hook", async () => {
+  const env = createTestEnvironment();
+  const { __test__ } = await importModule("scripts/scbr.js");
+  await env.hooks.trigger("init");
+
+  // An embedded backup that cannot be written out.
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, {
+    version: 6,
+    backups: [{ ...ORPHAN_INDEX_ENTRY, id: "embedded-1", path: "Scene.json#embedded-1", data: { name: "Scene One" } }]
+  });
+  env.state.uploadResult = {};
+  await env.hooks.trigger("ready");
+
+  assert.equal(env.hooks.errors.length, 1);
+  assert.equal(env.hooks.errors[0].location, `${__test__.MODULE_ID}.migrateLegacyBackups`);
+  assert.match(env.hooks.errors[0].error.message, /Failed to write backup file/);
+
+  env.cleanup();
+});
+
 test("core helpers normalize language, paths, backup labels, and selection state", async () => {
   const env = createTestEnvironment();
   env.state.localizations.set("scbr.backup.unnamed", "Unnamed Backup");

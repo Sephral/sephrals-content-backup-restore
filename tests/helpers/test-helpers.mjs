@@ -128,10 +128,15 @@ export class TestHTMLElement {
 function createHooksStub() {
   const onceHandlers = new Map();
   const onHandlers = new Map();
+  const errors = [];
 
   return {
     onceHandlers,
     onHandlers,
+    errors,
+    onError(location, error, options) {
+      errors.push({ location, error, options });
+    },
     once(event, handler) {
       const bucket = onceHandlers.get(event) ?? [];
       bucket.push(handler);

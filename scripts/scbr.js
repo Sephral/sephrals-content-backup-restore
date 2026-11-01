@@ -919,7 +919,16 @@ async function migrateLegacyBackups() {
 
   // Re-home indexed files into the world storage root when they still point to legacy module storage.
   for (const entry of indexedBackups) {
-    const resolved = await readBackupFile(entry, { includeSource: true });
+    let resolved;
+    try {
+      resolved = await readBackupFile(entry, { includeSource: true });
+    } catch (error) {
+      // An index entry whose file is gone (world copied without its scbr folder, file removed by hand) stays as it is.
+      // It must not stop the migration of the others or the start of the module.
+      console.warn(`${MODULE_ID} | Could not read backup '${entry.path || entry.id}' during migration.`, error);
+      existing.push(entry);
+      continue;
+    }
     const canonicalPath = buildBackupStoragePath(resolved.backup);
     if (resolved.sourceRoot !== getWorldStorageRoot() || normalizeStoragePath(entry.path) !== canonicalPath) {
       const rewritten = await writeBackupFile(resolved.backup, canonicalPath);
@@ -2306,7 +2315,14 @@ Hooks.once("init", () => {
 Hooks.once("ready", async () => {
   await ensureModuleTranslationsLoaded();
   // Backups are GM-only; the migration rewrites world settings and files players may not write.
-  if (game.user?.isGM) await migrateLegacyBackups();
+  if (game.user?.isGM) {
+    try {
+      await migrateLegacyBackups();
+    } catch (error) {
+      // The migration runs again at the next start; the error hook keeps it visible without an unhandled rejection.
+      Hooks.onError(`${MODULE_ID}.migrateLegacyBackups`, error, { log: "error" });
+    }
+  }
   noticeNewVersions();
 });
 
