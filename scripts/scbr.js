@@ -11,7 +11,7 @@ const UI_THEME_SETTING = "uiTheme";
 const SAFETY_BACKUP_SETTING = "safetyBackup";
 const ACKNOWLEDGED_VERSIONS_SETTING = "acknowledgedVersions";
 // The Foundry version the module was verified against (see the self-test).
-const TESTED_VERSIONS = Object.freeze({ core: "14.369" });
+const TESTED_VERSIONS = Object.freeze({ core: "14.370" });
 const LEGACY_FLAG = "documentBackups";
 const LEGACY_SCENE_BACKUP_FLAG = "sceneBackup";
 const BACKUP_STORAGE_VERSION = 6;
