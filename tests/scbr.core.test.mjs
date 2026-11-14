@@ -37,7 +37,7 @@ test("registers SCBR settings, menu, ready migration, and context options", asyn
   const debugMenu = env.state.registerMenuCalls.find((entry) => entry.moduleId === __test__.MODULE_ID && entry.key === "debugFile");
   assert.equal(debugMenu?.config.restricted, true);
   const provider = globalThis.sephralsDebugFiles?.providers.get(__test__.MODULE_ID);
-  assert.deepEqual(provider?.omitSettings, [__test__.STORE_SETTING]);
+  assert.deepEqual(provider?.omitSettings, [__test__.STORE_SETTING, __test__.ENCOUNTER_INDEX_SETTING]);
   assert.equal(typeof provider?.recent, "function");
   assert.equal(provider.message, undefined);
   const { details } = provider.recent();

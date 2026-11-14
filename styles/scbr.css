@@ -628,3 +628,17 @@
     justify-content: flex-end;
   }
 }
+
+/* Encounter snapshots: buttons in the combat tracker and the summary in the confirmation */
+.scbr-encounter-button.scbr-dimmed {
+  opacity: 0.45;
+}
+
+.scbr-encounter-summary {
+  margin: 0.4rem 0 0.6rem;
+  padding-left: 1.2rem;
+}
+
+.scbr-encounter-summary li {
+  margin: 0.1rem 0;
+}

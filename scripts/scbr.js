@@ -1,6 +1,9 @@
 import { registerUsage, countFeature, markUsed } from "./usage.mjs";
 import { registerDebugMenu, registerDebugProvider, saveDebugFile as saveSharedDebugFile } from "./debug-file.mjs";
 import { registerHubModule } from "./hub.mjs";
+import { createEncounterService } from "./encounter-service.mjs";
+import { createEncounterUi } from "./encounter-ui.mjs";
+import { DEFAULT_KEEP, MIN_KEEP, MAX_KEEP } from "./encounter-state.mjs";
 
 const MODULE_ID = "sephrals-content-backup-restore";
 const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
@@ -10,6 +13,11 @@ const UI_LANGUAGE_SETTING = "uiLanguage";
 const UI_THEME_SETTING = "uiTheme";
 const SAFETY_BACKUP_SETTING = "safetyBackup";
 const ACKNOWLEDGED_VERSIONS_SETTING = "acknowledgedVersions";
+// Encounter snapshots (state of a fight at its start), see encounter-service.mjs
+const ENCOUNTER_INDEX_SETTING = "encounterIndex";
+const ENCOUNTER_AUTO_SETTING = "autoEncounterSnapshot";
+const ENCOUNTER_KEEP_SETTING = "encounterKeep";
+const ENCOUNTER_MUSIC_SETTING = "encounterMusic";
 // The Foundry version the module was verified against (see the self-test).
 const TESTED_VERSIONS = Object.freeze({ core: "14.370" });
 const LEGACY_FLAG = "documentBackups";
@@ -1876,6 +1884,10 @@ async function openBackupToolDialog({ document=null } = {}) {
           default: !!derived.selectedDocument
         },
         {
+          action: "encounters",
+          label: localize("scbr.encounter.action.open", "Encounter states")
+        },
+        {
           action: "cancel",
           label: localize("scbr.action.cancel", "Cancel")
         }
@@ -1883,6 +1895,10 @@ async function openBackupToolDialog({ document=null } = {}) {
     });
 
     const selectedDocument = getSelectedDocument(state.documentType, state.documentId);
+    if (result === "encounters") {
+      await encounterUi.openEncounterManager();
+      continue;
+    }
     if (result === "backup") {
       if (!selectedDocument) {
         ui.notifications.warn(localize("scbr.notification.selectDocument", "Select a live document before creating a backup."));
@@ -1956,20 +1972,26 @@ class BackupToolMenu extends foundry.applications.api.ApplicationV2 {
 }
 
 function createContextOption(documentName) {
+  const label = localize("scbr.context.label", "Sephral’s Content Backup & Restore");
+  const open = (target) => {
+    const documentId = getDocumentIdFromContext(target);
+    const document = getDocumentCollection(documentName)?.get(documentId);
+    if (!document) {
+      ui.notifications.error(localize("scbr.notification.documentMissing", "The selected document could not be found."));
+      return;
+    }
+
+    openBackupToolDialog({ document });
+  };
+  // v13 keys (name, condition, callback) and v14 keys (label, visible, onClick) together: v13 works, v14 logs nothing.
   return {
-    name: localize("scbr.context.label", "Sephral’s Content Backup & Restore"),
+    name: label,
+    label,
     icon: '<i class="fas fa-box-archive"></i>',
     condition: () => game.user.isGM,
-    callback: (target) => {
-      const documentId = getDocumentIdFromContext(target);
-      const document = getDocumentCollection(documentName)?.get(documentId);
-      if (!document) {
-        ui.notifications.error(localize("scbr.notification.documentMissing", "The selected document could not be found."));
-        return;
-      }
-
-      openBackupToolDialog({ document });
-    }
+    visible: () => game.user.isGM,
+    callback: (target) => open(target),
+    onClick: (_event, target) => open(target)
   };
 }
 
@@ -2030,6 +2052,25 @@ async function checkIntegrations() {
     check(!missing, "files", { count: missing }, "{count} backups are listed but missing from the backup files.");
   }
 
+  // Encounter snapshots: the list is readable and the newest file is there
+  let encounters = null;
+  try {
+    encounters = encounterService.listSnapshots();
+  } catch (error) {
+    console.warn(`${MODULE_ID} | Self-test could not read the encounter list`, error);
+  }
+  check(Array.isArray(encounters), "encounterIndex", {}, "The list of encounter states could not be read.");
+  if (encounters?.length) {
+    let readable = true;
+    try {
+      await encounterService.loadSnapshot(encounters[0]);
+    } catch (error) {
+      readable = false;
+      console.warn(`${MODULE_ID} | Self-test could not read the newest encounter state`, error);
+    }
+    check(readable, "encounterFile", {}, "The newest encounter state is listed but its file could not be read.");
+  }
+
   let lock = true;
   try {
     await releaseBackupStoreLock(await acquireBackupStoreLock({ timeoutMs: 3000 }));
@@ -2070,6 +2111,11 @@ function describeDebugState() {
     } catch (error) {
       details.legacy[legacyModuleId] = String(error?.message ?? error);
     }
+  }
+  try {
+    details.encounters = encounterService.describeState();
+  } catch (error) {
+    details.encounters = { error: String(error?.message ?? error) };
   }
   try {
     const lock = game.settings.get(MODULE_ID, STORE_LOCK_SETTING);
@@ -2150,6 +2196,42 @@ function addSettingsGear(dialog) {
   else header.append(gear);
 }
 
+// Snapshots of a fight: the service reads and applies, the ui owns the buttons and the list. Both reuse the storage,
+// the lock and the dialog helpers above.
+const encounterService = createEncounterService({
+  MODULE_ID,
+  INDEX_SETTING: ENCOUNTER_INDEX_SETTING,
+  AUTO_SETTING: ENCOUNTER_AUTO_SETTING,
+  KEEP_SETTING: ENCOUNTER_KEEP_SETTING,
+  MUSIC_SETTING: ENCOUNTER_MUSIC_SETTING,
+  localize,
+  format,
+  escapeHtml,
+  isAbsoluteUrl,
+  isSafetyBackupEnabled,
+  getTimestampString,
+  getWorldEnvironment,
+  getCompatibilityWarning,
+  withLock: (fn) => withBackupStoreLock(fn),
+  upload: (file, path, root) => uploadStorageFile(file, path, root),
+  iterate: (path, options) => iterateStorageFiles(path, options),
+  ensureDirectory: (path) => ensureStorageDirectoryExists(path),
+  worldRoot: () => getWorldStorageRoot(),
+  count: (key) => countFeature(MODULE_ID, key)
+});
+const encounterUi = createEncounterUi({
+  MODULE_ID,
+  localize,
+  format,
+  escapeHtml,
+  getTimestampString,
+  buildDialogLayout,
+  waitForBackupDialog,
+  addSettingsGear,
+  ensureTranslations: ensureModuleTranslationsLoaded,
+  count: (key) => countFeature(MODULE_ID, key)
+}, encounterService);
+
 function createApi() {
   // Same actions as the dialog, without prompts, for macros and world scripts. Errors are thrown, not shown.
   return {
@@ -2183,6 +2265,33 @@ function createApi() {
       }
       countFeature(MODULE_ID, "apiCall");
       return reconstructDocumentFromBackup(backup);
+    },
+    // Encounter snapshots: the state of a fight (hit points and resources, effects, tokens, doors, lights, music)
+    async saveEncounterState(combat=null, { name } = {}) {
+      assertApiAccess();
+      const meta = await encounterService.saveCurrent(combat ?? game.combats?.viewed ?? game.combat ?? null, { kind: "manual", name: name == null ? null : String(name) });
+      countFeature(MODULE_ID, "apiCall");
+      countFeature(MODULE_ID, "encounterSave");
+      return meta;
+    },
+    listEncounterStates() {
+      assertApiAccess();
+      return encounterService.listSnapshots();
+    },
+    // Resets the scene, the combat and the characters of the snapshot. Without a snapshot id: the newest one of the viewed combat.
+    async restoreEncounterState(snapshotId=null, { confirm=true, removeAddedTokens=false } = {}) {
+      assertApiAccess();
+      const id = snapshotId ?? encounterService.latestForCombat((game.combats?.viewed ?? game.combat)?.id)?.id;
+      if (!id) throw new Error(localize("scbr.encounter.notice.none", "There is no saved state for this combat yet."));
+      countFeature(MODULE_ID, "apiCall");
+      return encounterService.restoreSnapshot(id, { confirm, removeAddedTokens });
+    },
+    async deleteEncounterState(snapshotId) {
+      assertApiAccess();
+      countFeature(MODULE_ID, "apiCall");
+      const deleted = await encounterService.deleteSnapshot(snapshotId);
+      if (deleted) countFeature(MODULE_ID, "encounterDelete");
+      return deleted;
     },
     async runSelfTest(options) {
       assertApiAccess();
@@ -2264,6 +2373,41 @@ Hooks.once("init", () => {
     default: true
   });
 
+  game.settings.register(MODULE_ID, ENCOUNTER_INDEX_SETTING, {
+    scope: "world",
+    config: false,
+    type: Object,
+    default: { version: 1, snapshots: [] }
+  });
+
+  game.settings.register(MODULE_ID, ENCOUNTER_AUTO_SETTING, {
+    scope: "world",
+    config: true,
+    type: Boolean,
+    name: localize("scbr.settings.encounterAuto.label", "Save the state when a combat starts"),
+    hint: localize("scbr.settings.encounterAuto.hint", "Saves hit points and resources, effects, token positions, doors, lights and the playing music when you start a combat. The combat tracker then has a button that brings the scene back to that state."),
+    default: true
+  });
+
+  game.settings.register(MODULE_ID, ENCOUNTER_KEEP_SETTING, {
+    scope: "world",
+    config: true,
+    type: Number,
+    range: { min: MIN_KEEP, max: MAX_KEEP, step: 1 },
+    name: localize("scbr.settings.encounterKeep.label", "Encounter states to keep"),
+    hint: localize("scbr.settings.encounterKeep.hint", "The newest states stay, older ones are removed. Copies made before a reset count too."),
+    default: DEFAULT_KEEP
+  });
+
+  game.settings.register(MODULE_ID, ENCOUNTER_MUSIC_SETTING, {
+    scope: "world",
+    config: true,
+    type: Boolean,
+    name: localize("scbr.settings.encounterMusic.label", "Include the playing music"),
+    hint: localize("scbr.settings.encounterMusic.hint", "A reset also starts and stops sounds so the same music plays as at the start of the fight."),
+    default: true
+  });
+
   game.settings.register(MODULE_ID, ACKNOWLEDGED_VERSIONS_SETTING, {
     scope: "client",
     config: false,
@@ -2300,12 +2444,13 @@ Hooks.once("init", () => {
     label: () => localize("scbr.debug.Entry", "Save Debug File (Sephral’s Modules)"),
     notice: (file) => format("scbr.debug.Saved", { file }, `Debug file ${file} saved.`),
     recent: describeDebugState,
-    omitSettings: [STORE_SETTING]
+    omitSettings: [STORE_SETTING, ENCOUNTER_INDEX_SETTING]
   });
 
   registerUsage(MODULE_ID, {
-    features: ["backupCreate", "backupRestore", "safetyBackup", "documentReconstruct", "backupDelete", "apiCall"],
-    settings: [UI_THEME_SETTING, UI_LANGUAGE_SETTING, SAFETY_BACKUP_SETTING]
+    features: ["backupCreate", "backupRestore", "safetyBackup", "documentReconstruct", "backupDelete", "apiCall",
+      "encounterAutoSave", "encounterSave", "encounterRestore", "encounterSafety", "encounterDelete"],
+    settings: [UI_THEME_SETTING, UI_LANGUAGE_SETTING, SAFETY_BACKUP_SETTING, ENCOUNTER_AUTO_SETTING, ENCOUNTER_KEEP_SETTING, ENCOUNTER_MUSIC_SETTING]
   });
 
   const module = game.modules.get(MODULE_ID);
@@ -2325,6 +2470,16 @@ Hooks.once("ready", async () => {
   }
   noticeNewVersions();
 });
+
+// Registered at the top level, like the context menus below: the tracker renders before ready.
+Hooks.on("combatStart", (combat, updateData) => {
+  // Only the client that clicked runs this hook, and only a GM saves. The state is read before the combat updates.
+  encounterService.onCombatStart(combat, updateData).catch((error) => {
+    Hooks.onError(`${MODULE_ID}.encounterAutoSave`, error, { log: "error" });
+  });
+});
+Hooks.on("renderCombatTracker", (app, html) => encounterUi.injectTrackerButtons(app, html));
+Hooks.on("getCombatContextOptions", (app, entries) => encounterUi.addContextEntries(app, entries));
 
 for (const config of SUPPORTED_DOCUMENTS) {
   Hooks.on(`get${config.documentName}ContextOptions`, (_application, contextOptions) => {
@@ -2489,5 +2644,11 @@ export const __test__ = {
   assertApiAccess,
   resolveApiDocument,
   getBackupNotFoundError,
-  createApi
+  createApi,
+  encounterService,
+  encounterUi,
+  ENCOUNTER_INDEX_SETTING,
+  ENCOUNTER_AUTO_SETTING,
+  ENCOUNTER_KEEP_SETTING,
+  ENCOUNTER_MUSIC_SETTING
 };

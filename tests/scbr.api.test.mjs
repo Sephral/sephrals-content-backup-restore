@@ -183,7 +183,7 @@ test("init exposes the API on the module", async () => {
   await env.hooks.trigger("init");
 
   const api = env.game.modules.get(__test__.MODULE_ID).api;
-  assert.deepEqual(Object.keys(api).sort(), ["createBackup", "listBackups", "reconstruct", "restoreBackup", "runSelfTest", "saveDebugFile"]);
+  assert.deepEqual(Object.keys(api).sort(), ["createBackup", "deleteEncounterState", "listBackups", "listEncounterStates", "reconstruct", "restoreBackup", "restoreEncounterState", "runSelfTest", "saveDebugFile", "saveEncounterState"]);
 });
 
 test("API createBackup and listBackups work without a dialog", async () => {

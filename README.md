@@ -10,6 +10,7 @@
 
 ## Highlights
 
+* **One click back to the start of a fight:** when a combat begins, the hit points and resources of the fighters, their effects and conditions, token positions, doors, lights and the playing music are saved. A button in the combat tracker puts the scene back for a rerun or after a mistake, with a confirmation first. Linked and unlinked tokens both work, and nothing outside the fight is touched.
 * **One right click away:** save a named backup of a scene, actor, item, journal entry, playlist, macro, roll table or card stack straight from the sidebar.
 * **Restore without regrets:** before every restore the current state is saved as a backup too. Changed your mind? Restore that one.
 * **Bring back what you deleted:** the recovery view lists deleted documents that still have a backup. They return with their original ID, so links, linked tokens and combat entries work again.
@@ -23,6 +24,8 @@
 1. Right click a document in the sidebar and choose **Sephral’s Content Backup & Restore**.
 2. Name the backup and save it.
 3. Need it back? Open the same menu to restore it, or open the manager from the module settings to recover deleted documents.
+
+For a fight, just start the combat. The state is saved on its own, and the camera and the back arrow in the header of the combat tracker save it again or bring it back.
 
 ## Install
 
