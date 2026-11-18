@@ -208,8 +208,10 @@ test("waitForBackupDialog, openBackupToolDialog, menu rendering, and context cal
   // Restore returns to the manager like the other actions, so the queue has to end with a close.
   const managerQueue = [{ action: "restore", backupId: "backup-1" }, null, null];
   env.state.dialogWaitResult = () => managerQueue.shift();
+  env.state.dialogConfirmTitles = [];
   await __test__.openBackupToolDialog({ document: scene });
-  assert.equal(env.state.lastDialogConfirmOptions?.window?.title, "Restore Backup");
+  // The test storage has no file for this backup: after the restore question comes the offer to remove the entry
+  assert.deepEqual(env.state.dialogConfirmTitles, ["Restore Backup", "Backup File Missing"]);
   assert.equal(managerQueue.length, 1);
   const menu = new __test__.BackupToolMenu();
   assert.equal((await menu._renderHTML()).tagName, "DIV");

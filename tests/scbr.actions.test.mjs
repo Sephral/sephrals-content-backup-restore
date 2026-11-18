@@ -595,3 +595,30 @@ function createBackupRecord(overrides = {}) {
     ...overrides
   };
 }
+test("reconstruct moves the backups it can read and keeps an entry whose file is gone", async () => {
+  const storage = createVirtualStorage();
+  const [record] = seedActorBackups(storage);
+  // A third index entry without a file, as after copying a world without its scbr folder
+  const lost = toIndexEntry(createActorBackupRecord({ id: "actor-backup-lost", name: "Lost", path: "Actor.json#actor-backup-lost" }));
+  const store = env.state.settingsValues.get(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`);
+  env.state.settingsValues.set(`${__test__.MODULE_ID}.${__test__.STORE_SETTING}`, { ...store, backups: [...store.backups, lost] });
+  const newId = "n1B2c3D4e5F6g7H8";
+  env.game.actors = {
+    contents: [],
+    get(id, options) {
+      return options?.invalid && id === ACTOR_ID ? { id: ACTOR_ID, name: "Broken", documentName: "Actor" } : null;
+    },
+    documentClass: {
+      async create(data) {
+        return { id: newId, name: data.name, documentName: "Actor" };
+      }
+    }
+  };
+
+  const created = await __test__.reconstructDocumentFromBackup(toIndexEntry(record));
+
+  // The lost entry does not stop the move. Saving rebuilds the index from the files, so it leaves the list.
+  assert.equal(created.id, newId);
+  assert.deepEqual(__test__.getAllBackups().map((entry) => [entry.id, entry.documentId]),
+    [["actor-backup-1", newId], ["actor-backup-0", newId]]);
+});

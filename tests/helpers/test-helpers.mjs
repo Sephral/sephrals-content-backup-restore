@@ -350,6 +350,7 @@ export function createTestEnvironment() {
           },
           async confirm(options) {
             state.lastDialogConfirmOptions = options;
+            (state.dialogConfirmTitles ??= []).push(options?.window?.title);
             return typeof state.dialogConfirmResult === "function" ? state.dialogConfirmResult(options) : state.dialogConfirmResult;
           }
         }

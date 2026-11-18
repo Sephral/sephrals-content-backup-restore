@@ -601,6 +601,18 @@ async function writeBackupFile(backup, path=null) {
   });
 }
 
+/**
+ * The backup is in the index, but its file or its entry in the file is gone (world copied without its scbr folder,
+ * file removed by hand). The manager offers to remove such an entry.
+ */
+class MissingBackupError extends Error {
+  constructor(message, backup) {
+    super(message);
+    this.name = "MissingBackupError";
+    this.backup = backup ?? null;
+  }
+}
+
 async function readBackupFile(backup, { includeSource=false } = {}) {
   const path = normalizeStoragePath(backup?.path);
   if (!path && !backup?.id) {
@@ -630,7 +642,7 @@ async function readBackupFile(backup, { includeSource=false } = {}) {
   }
 
   if (!payload) {
-    throw new Error(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`));
+    throw new MissingBackupError(format("scbr.notification.invalidBackup", { documentName: backup?.documentName ?? localize("scbr.document.unknown", "Document") }, `The stored backup for '${backup?.documentName ?? localize("scbr.document.unknown", "Document")}' is invalid.`), backup);
   }
 
   const normalized = normalizeBackup({ ...payload, path: `${parsedPath.filePath}#${parsedPath.backupId}` });
@@ -1335,7 +1347,16 @@ async function reconstructDocumentFromBackup(backup) {
         continue;
       }
 
-      const record = await readBackupFile(entry);
+      let record;
+      try {
+        record = await readBackupFile(entry);
+      } catch (error) {
+        if (!(error instanceof MissingBackupError)) throw error;
+        // The document already exists again: one lost file must not stop moving the other backups to it
+        console.warn(`${MODULE_ID} | Backup '${entry.path || entry.id}' has no file and keeps its old document.`, error);
+        updatedBackups.push(entry);
+        continue;
+      }
       const rewritten = await writeBackupFile({
         ...record,
         documentId: created.id,
@@ -1427,10 +1448,37 @@ async function removeBackupEntry(entry) {
   }, `Backup '${formatBackupLabel(entry.backup)}' removed for '${documentName}'.`));
 }
 
+/**
+ * A backup whose file is gone cannot be restored. Say so and offer to remove the entry from the list.
+ * @param {MissingBackupError} error
+ */
+async function offerMissingBackupRemoval(error) {
+  const backup = error.backup;
+  const documentName = backup?.documentName ?? localize("scbr.document.unknown", "Document");
+  const confirmed = await foundry.applications.api.DialogV2.confirm({
+    window: { title: localize("scbr.dialog.missingFile.title", "Backup File Missing") },
+    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.missingFile.body", {
+      backupName: formatBackupLabel(backup),
+      documentName
+    }, `The file of backup '${formatBackupLabel(backup)}' for '${documentName}' is missing, so it cannot be restored. This happens when a world was copied without its backup folder. Remove the entry from the list?`))}</p>`,
+    yes: { label: localize("scbr.dialog.missingFile.confirm", "Remove Entry") },
+    no: { label: localize("scbr.action.cancel", "Cancel") },
+    rejectClose: false,
+    modal: true
+  });
+  if (!confirmed) return;
+  await removeBackupByEntry(backup);
+  ui.notifications.info(format("scbr.notification.backupRemoved", {
+    backupName: formatBackupLabel(backup),
+    documentName
+  }, `Backup '${formatBackupLabel(backup)}' removed for '${documentName}'.`));
+}
+
 async function runDocumentAction(document, action) {
   try {
     await action(document);
   } catch (error) {
+    if (error instanceof MissingBackupError && error.backup?.id) return offerMissingBackupRemoval(error);
     console.error(`${MODULE_ID} |`, error);
     ui.notifications.error(format("scbr.notification.error", { message: error.message ?? String(error) }, `Sephral’s Content Backup & Restore failed: ${error.message ?? String(error)}`));
   }
@@ -1440,6 +1488,7 @@ async function runRecoveryAction(action) {
   try {
     await action();
   } catch (error) {
+    if (error instanceof MissingBackupError && error.backup?.id) return offerMissingBackupRemoval(error);
     console.error(`${MODULE_ID} |`, error);
     ui.notifications.error(format("scbr.notification.error", { message: error.message ?? String(error) }, `Sephral’s Content Backup & Restore failed: ${error.message ?? String(error)}`));
   }

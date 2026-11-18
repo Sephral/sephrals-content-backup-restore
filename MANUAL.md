@@ -15,6 +15,7 @@ Supported documents: scenes, actors, items, journal entries, playlists, macros, 
 * A restore asks for confirmation first. With the setting *Backup before restore* (on by default) the current state is saved as a backup before the restore, so a restore can be undone with one click.
 * The recovery view lists deleted documents that still have a backup. Recovered documents keep their original ID, so links, linked tokens and combat entries work again.
 * Each backup remembers the Foundry version and the game system version it was made with. When a backup comes from another Foundry generation or system version, the restore shows a warning. The backup list shows these versions as a tooltip.
+* When the file of a backup is missing (a world copied without its `scbr` folder, a file removed by hand), restoring it says so and offers to remove the entry from the list.
 
 ## Encounter states
 
