@@ -106,6 +106,7 @@ GMs can create and restore backups from macros through `game.modules.get("sephra
 * `deleteEncounterState(snapshotId)` removes a state from the list.
 * `runSelfTest()` runs the self test and returns the problems it found.
 * `saveDebugFile()` saves the debug file, see [Debug file](#debug-file).
+* `samples()` lists sample windows with made-up backups and encounter states (the backup window in its states, every question, the combat tracker buttons, the self test cards). They show every text in its place, nothing is saved and no button does anything.
 
 Example: back up all scenes before a session.
 

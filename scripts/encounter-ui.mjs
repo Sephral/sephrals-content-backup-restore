@@ -18,11 +18,15 @@ export function createEncounterUi(ctx, service) {
     }
   }
 
-  async function askName(defaultName) {
+  function nameContent(defaultName) {
     const label = ctx.localize("scbr.encounter.save.nameLabel", "Name of the snapshot");
+    return `<div class="form-group"><label>${ctx.escapeHtml(label)}</label><div class="form-fields"><input type="text" name="name" value="${ctx.escapeHtml(defaultName)}" autofocus></div></div>`;
+  }
+
+  async function askName(defaultName) {
     const result = await foundry.applications.api.DialogV2.prompt({
       window: { title: ctx.localize("scbr.encounter.save.title", "Save the state of the encounter") },
-      content: `<div class="form-group"><label>${ctx.escapeHtml(label)}</label><div class="form-fields"><input type="text" name="name" value="${ctx.escapeHtml(defaultName)}" autofocus></div></div>`,
+      content: nameContent(defaultName),
       ok: {
         label: ctx.localize("scbr.encounter.save.confirm", "Save"),
         callback: (_event, button) => button.form.elements.name.value.trim() || defaultName
@@ -65,6 +69,17 @@ export function createEncounterUi(ctx, service) {
     return el;
   }
 
+  /** The two buttons of the tracker header. Without a saved state the reset button is dimmed. */
+  function trackerButtons({ hasSaved }) {
+    const save = button("fa-camera", ctx.localize("scbr.encounter.button.save", "Save the state of the encounter"), "save");
+    const reset = button("fa-clock-rotate-left", ctx.localize("scbr.encounter.button.reset", "Back to the saved state"), "reset");
+    if (!hasSaved) {
+      reset.classList.add("scbr-dimmed");
+      reset.dataset.tooltip = ctx.localize("scbr.encounter.button.resetNone", "No saved state for this combat yet");
+    }
+    return { save, reset };
+  }
+
   /** `renderCombatTracker`: save and reset buttons in the header of the tracker (GM only). */
   function injectTrackerButtons(app, html) {
     if (!game.user?.isGM) return;
@@ -73,12 +88,7 @@ export function createEncounterUi(ctx, service) {
     if (!group || group.querySelector(".scbr-encounter-button")) return;
     const combat = viewedCombat(app);
     if (!combat) return;
-    const save = button("fa-camera", ctx.localize("scbr.encounter.button.save", "Save the state of the encounter"), "save");
-    const reset = button("fa-clock-rotate-left", ctx.localize("scbr.encounter.button.reset", "Back to the saved state"), "reset");
-    if (!service.latestForCombat(combat.id)) {
-      reset.classList.add("scbr-dimmed");
-      reset.dataset.tooltip = ctx.localize("scbr.encounter.button.resetNone", "No saved state for this combat yet");
-    }
+    const { save, reset } = trackerButtons({ hasSaved: !!service.latestForCombat(combat.id) });
     save.addEventListener("click", (event) => {
       event.preventDefault();
       void saveState(viewedCombat(app));
@@ -130,7 +140,7 @@ export function createEncounterUi(ctx, service) {
     return parts.join(", ");
   }
 
-  function buildRows(list) {
+  function buildRows(list, exists = (meta) => !!game.scenes.get(meta.sceneId)) {
     if (!list.length) {
       return `<div class="scbr-empty-state">
         <div class="scbr-empty-icon"><i class="fas fa-clock-rotate-left"></i></div>
@@ -141,7 +151,7 @@ export function createEncounterUi(ctx, service) {
     const restoreLabel = ctx.escapeHtml(ctx.localize("scbr.encounter.action.restore", "Reset the scene to this state"));
     const deleteLabel = ctx.escapeHtml(ctx.localize("scbr.encounter.action.delete", "Remove this snapshot"));
     return `<div class="scbr-backup-list scbr-encounter-list">${list.map((meta) => {
-      const sceneGone = !game.scenes.get(meta.sceneId);
+      const sceneGone = !exists(meta);
       const kindLabel = service.snapshotTitle(meta.kind);
       const where = [meta.sceneName, meta.combatName].filter(Boolean).join(" - ");
       return `<div class="scbr-backup-row ${sceneGone ? "is-missing" : "is-available"}" data-encounter-id="${ctx.escapeHtml(meta.id)}">
@@ -162,22 +172,29 @@ export function createEncounterUi(ctx, service) {
     }).join("")}</div>`;
   }
 
+  function managerContent(list, exists) {
+    return ctx.buildDialogLayout({
+      eyebrow: ctx.localize("scbr.dialog.title", "Sephral’s Content Backup & Restore"),
+      title: ctx.localize("scbr.encounter.manager.title", "Encounter states"),
+      summary: ctx.format("scbr.encounter.manager.summary", { keep: service.keepCount() },
+        `The state of a fight at its start, the last ${service.keepCount()} are kept. The reset touches only the scene, the combat and the characters of the snapshot.`),
+      count: list.length,
+      sectionLabel: ctx.localize("scbr.encounter.manager.section", "Snapshots"),
+      sectionHint: ctx.localize("scbr.manager.sortHint", "Newest first, actions on the right."),
+      rowsHtml: buildRows(list, exists),
+      showCount: false
+    });
+  }
+
+  function deleteContent() {
+    return `<p>${ctx.escapeHtml(ctx.localize("scbr.encounter.delete.body", "Remove this snapshot? It cannot be brought back."))}</p>`;
+  }
+
   /** The list of snapshots in a window of the backup tool. Returns when the GM goes back. */
   async function openEncounterManager() {
     await ctx.ensureTranslations();
     while (true) {
-      const list = service.listSnapshots();
-      const content = ctx.buildDialogLayout({
-        eyebrow: ctx.localize("scbr.dialog.title", "Sephral’s Content Backup & Restore"),
-        title: ctx.localize("scbr.encounter.manager.title", "Encounter states"),
-        summary: ctx.format("scbr.encounter.manager.summary", { keep: service.keepCount() },
-          `The state of a fight at its start, the last ${service.keepCount()} are kept. The reset touches only the scene, the combat and the characters of the snapshot.`),
-        count: list.length,
-        sectionLabel: ctx.localize("scbr.encounter.manager.section", "Snapshots"),
-        sectionHint: ctx.localize("scbr.manager.sortHint", "Newest first, actions on the right."),
-        rowsHtml: buildRows(list),
-        showCount: false
-      });
+      const content = managerContent(service.listSnapshots());
       const combat = viewedCombat(null);
       const result = await ctx.waitForBackupDialog({
         title: `${ctx.localize("scbr.dialog.title", "Sephral’s Content Backup & Restore")} - ${ctx.localize("scbr.encounter.manager.title", "Encounter states")}`,
@@ -202,7 +219,7 @@ export function createEncounterUi(ctx, service) {
       if (result?.action === "encounterDelete" && result.backupId) {
         const ok = await foundry.applications.api.DialogV2.confirm({
           window: { title: ctx.localize("scbr.encounter.delete.title", "Remove snapshot") },
-          content: `<p>${ctx.escapeHtml(ctx.localize("scbr.encounter.delete.body", "Remove this snapshot? It cannot be brought back."))}</p>`,
+          content: deleteContent(),
           rejectClose: false,
           modal: true
         });
@@ -213,5 +230,5 @@ export function createEncounterUi(ctx, service) {
     }
   }
 
-  return { injectTrackerButtons, addContextEntries, openEncounterManager, saveState, resetCombat };
+  return { injectTrackerButtons, addContextEntries, openEncounterManager, saveState, resetCombat, trackerButtons, managerContent, nameContent, deleteContent };
 }

@@ -4,6 +4,7 @@ import { registerHubModule } from "./hub.mjs";
 import { createEncounterService } from "./encounter-service.mjs";
 import { createEncounterUi } from "./encounter-ui.mjs";
 import { DEFAULT_KEEP, MIN_KEEP, MAX_KEEP } from "./encounter-state.mjs";
+import { sampleWindows } from "./sample-windows.js";
 
 const MODULE_ID = "sephrals-content-backup-restore";
 const LEGACY_MODULE_IDS = [["backup", "tool"].join("-")];
@@ -1170,9 +1171,9 @@ function createEntryFromBackup(backup) {
   };
 }
 
-async function promptForBackupName(document) {
+function buildCreateContent(document) {
   const defaultName = getDocumentDisplayName(document);
-  const content = buildDialogLayout({
+  return buildDialogLayout({
     eyebrow: getDocumentTypeLabel(document),
     title: localize("scbr.dialog.create.title", "Create Backup"),
     summary: format("scbr.dialog.create.summary", { documentName: getDocumentDisplayName(document) }, `Create a new backup for ${getDocumentDisplayName(document)}.`),
@@ -1190,6 +1191,10 @@ async function promptForBackupName(document) {
       </div>
     `
   });
+}
+
+async function promptForBackupName(document) {
+  const content = buildCreateContent(document);
 
   const name = await waitForBackupDialog({
     title: localize("scbr.dialog.create.title", "Create Backup"),
@@ -1246,7 +1251,7 @@ function getSafetyBackupName() {
   return localize("scbr.backup.safetyName", "Before restore");
 }
 
-async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
+function buildRestoreConfirmContent(document, backup, { safetyBackup=true } = {}) {
   const documentName = getDocumentDisplayName(document);
   const hint = safetyBackup
     ? localize("scbr.dialog.restoreConfirm.safetyHint", "The current state is saved as a backup first, so you can undo the restore.")
@@ -1256,14 +1261,18 @@ async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
     ? `<p class="scbr-compat-warning"><i class="fas fa-triangle-exclamation"></i> ${foundry.utils.escapeHTML(compatibilityWarning)}</p>`
     : "";
 
+  return `<p>${foundry.utils.escapeHTML(format("scbr.dialog.restoreConfirm.body", {
+      backupName: formatBackupLabel(backup),
+      documentName
+    }, `Restore backup '${formatBackupLabel(backup)}' for '${documentName}'? The current state of the document will be overwritten.`))}</p>${warningHtml}<p>${foundry.utils.escapeHTML(hint)}</p>`;
+}
+
+async function confirmRestore(document, backup, { safetyBackup=true } = {}) {
   return foundry.applications.api.DialogV2.confirm({
     window: {
       title: localize("scbr.dialog.restoreConfirm.title", "Restore Backup")
     },
-    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.restoreConfirm.body", {
-      backupName: formatBackupLabel(backup),
-      documentName
-    }, `Restore backup '${formatBackupLabel(backup)}' for '${documentName}'? The current state of the document will be overwritten.`))}</p>${warningHtml}<p>${foundry.utils.escapeHTML(hint)}</p>`,
+    content: buildRestoreConfirmContent(document, backup, { safetyBackup }),
     yes: {
       label: localize("scbr.dialog.restoreConfirm.confirm", "Restore")
     },
@@ -1387,6 +1396,13 @@ async function removeBackupByEntry(backup) {
   countFeature(MODULE_ID, "backupDelete");
 }
 
+function buildDeleteConfirmContent(backup, documentName) {
+  return `<p>${foundry.utils.escapeHTML(format("scbr.dialog.deleteConfirm.body", {
+    backupName: formatBackupLabel(backup),
+    documentName
+  }, `Delete backup '${formatBackupLabel(backup)}' from '${documentName}'?`))}</p>`;
+}
+
 async function removeBackup(document, backupId) {
   const backup = getBackupById(document, backupId);
   if (!backup) {
@@ -1398,10 +1414,7 @@ async function removeBackup(document, backupId) {
     window: {
       title: localize("scbr.dialog.deleteConfirm.title", "Delete Backup")
     },
-    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.deleteConfirm.body", {
-      backupName: formatBackupLabel(backup),
-      documentName: getDocumentDisplayName(document)
-    }, `Delete backup '${formatBackupLabel(backup)}' from '${getDocumentDisplayName(document)}'?`))}</p>`,
+    content: buildDeleteConfirmContent(backup, getDocumentDisplayName(document)),
     yes: {
       label: localize("scbr.dialog.deleteConfirm.confirm", "Delete")
     },
@@ -1426,10 +1439,7 @@ async function removeBackupEntry(entry) {
     window: {
       title: localize("scbr.dialog.deleteConfirm.title", "Delete Backup")
     },
-    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.deleteConfirm.body", {
-      backupName: formatBackupLabel(entry.backup),
-      documentName
-    }, `Delete backup '${formatBackupLabel(entry.backup)}' from '${documentName}'?`))}</p>`,
+    content: buildDeleteConfirmContent(entry.backup, documentName),
     yes: {
       label: localize("scbr.dialog.deleteConfirm.confirm", "Delete")
     },
@@ -1452,15 +1462,19 @@ async function removeBackupEntry(entry) {
  * A backup whose file is gone cannot be restored. Say so and offer to remove the entry from the list.
  * @param {MissingBackupError} error
  */
+function buildMissingFileContent(backup, documentName) {
+  return `<p>${foundry.utils.escapeHTML(format("scbr.dialog.missingFile.body", {
+    backupName: formatBackupLabel(backup),
+    documentName
+  }, `The file of backup '${formatBackupLabel(backup)}' for '${documentName}' is missing, so it cannot be restored. This happens when a world was copied without its backup folder. Remove the entry from the list?`))}</p>`;
+}
+
 async function offerMissingBackupRemoval(error) {
   const backup = error.backup;
   const documentName = backup?.documentName ?? localize("scbr.document.unknown", "Document");
   const confirmed = await foundry.applications.api.DialogV2.confirm({
     window: { title: localize("scbr.dialog.missingFile.title", "Backup File Missing") },
-    content: `<p>${foundry.utils.escapeHTML(format("scbr.dialog.missingFile.body", {
-      backupName: formatBackupLabel(backup),
-      documentName
-    }, `The file of backup '${formatBackupLabel(backup)}' for '${documentName}' is missing, so it cannot be restored. This happens when a world was copied without its backup folder. Remove the entry from the list?`))}</p>`,
+    content: buildMissingFileContent(backup, documentName),
     yes: { label: localize("scbr.dialog.missingFile.confirm", "Remove Entry") },
     no: { label: localize("scbr.action.cancel", "Cancel") },
     rejectClose: false,
@@ -2014,8 +2028,9 @@ class BackupToolMenu extends foundry.applications.api.ApplicationV2 {
 
   _replaceHTML(_result, _content) {}
 
+  // The dialog is modal and stays open until the GM closes it, so the settings button does not wait for it.
   async render() {
-    await openBackupToolDialog();
+    openBackupToolDialog().catch((error) => console.error(`${MODULE_ID} |`, error));
     return this;
   }
 }
@@ -2175,6 +2190,12 @@ function describeDebugState() {
   return { details };
 }
 
+function buildSelfTestCard({ summary, versions, problems }) {
+  let content = `<h3>${escapeHtml(localize("scbr.selfTest.title", "Content Backup & Restore self test"))}</h3><p>${escapeHtml(summary)}</p><p><small>${escapeHtml(versions)}</small></p>`;
+  if (problems.length) content += `<ul>${problems.map((problem) => `<li>${escapeHtml(problem)}</li>`).join("")}</ul>`;
+  return content;
+}
+
 // Runs the self-test and reports the result as a notification and a whispered chat message.
 async function runSelfTest({ report=true } = {}) {
   await ensureModuleTranslationsLoaded();
@@ -2188,8 +2209,7 @@ async function runSelfTest({ report=true } = {}) {
   else ui.notifications.info(summary);
 
   if (report) {
-    let content = `<h3>${escapeHtml(localize("scbr.selfTest.title", "Content Backup & Restore self test"))}</h3><p>${escapeHtml(summary)}</p><p><small>${escapeHtml(versions)}</small></p>`;
-    if (problems.length) content += `<ul>${problems.map((problem) => `<li>${escapeHtml(problem)}</li>`).join("")}</ul>`;
+    const content = buildSelfTestCard({ summary, versions, problems });
     await ChatMessage.implementation.create({ content, whisper: [game.user.id], speaker: { alias: game.modules.get(MODULE_ID)?.title } });
   }
   return { problems, checks };
@@ -2281,6 +2301,20 @@ const encounterUi = createEncounterUi({
   count: (key) => countFeature(MODULE_ID, key)
 }, encounterService);
 
+// What the sample windows need from this file: the content builders of the dialogs and the helpers they use.
+function sampleHelpers() {
+  return {
+    localize, format, escapeHtml, formatBackupLabel, getWorldEnvironment, getDocumentTypeLabel, getDocumentTypePluralLabel,
+    applyDialogTheme, buildDialogLayout, buildBackupRows, buildCreateContent, buildRestoreConfirmContent,
+    buildDeleteConfirmContent, buildMissingFileContent, buildSelfTestCard,
+    ensureTranslations: async () => {
+      await ensureModuleTranslationsLoaded();
+      ensureStylesLoaded();
+    },
+    encounterUi, encounterService
+  };
+}
+
 function createApi() {
   // Same actions as the dialog, without prompts, for macros and world scripts. Errors are thrown, not shown.
   return {
@@ -2346,6 +2380,8 @@ function createApi() {
       assertApiAccess();
       return runSelfTest(options);
     },
+    // The windows, questions and chat cards filled with made-up backups, nothing saved (translators, testing; see samples.mjs)
+    samples: () => sampleWindows(sampleHelpers()),
     // One file for all of Sephral's modules, without a message id about their latest picture
     async saveDebugFile(messageId) {
       assertApiAccess();

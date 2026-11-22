@@ -293,15 +293,13 @@ export function createEncounterService(ctx) {
     return lines;
   }
 
-  async function confirmRestore(meta, summary, { safety }) {
+  function confirmContent(meta, summary, { safety }) {
     const items = describeSummary(summary).map((line) => `<li>${ctx.escapeHtml(line)}</li>`).join("");
     const kept = [];
     if (summary.tokensAdded) kept.push(ctx.format("scbr.encounter.summary.tokensKept", { count: summary.tokensAdded }, `${summary.tokensAdded} tokens added since stay on the scene.`));
     if (summary.missingActors) kept.push(ctx.format("scbr.encounter.summary.missing", { count: summary.missingActors }, `${summary.missingActors} characters no longer exist and are skipped.`));
     const warning = ctx.getCompatibilityWarning(meta);
-    return foundry.applications.api.DialogV2.confirm({
-      window: { title: ctx.localize("scbr.encounter.confirm.title", "Reset the encounter") },
-      content: `<p>${ctx.escapeHtml(ctx.format("scbr.encounter.confirm.body", { name: meta.name, scene: meta.sceneName, time: ctx.getTimestampString(meta.createdAt) },
+    return `<p>${ctx.escapeHtml(ctx.format("scbr.encounter.confirm.body", { name: meta.name, scene: meta.sceneName, time: ctx.getTimestampString(meta.createdAt) },
         `Reset the scene '${meta.sceneName}' to the state '${meta.name}' (${ctx.getTimestampString(meta.createdAt)})?`))}</p>
         <ul class="scbr-encounter-summary">${items}</ul>
         ${kept.length ? `<p><small>${ctx.escapeHtml(kept.join(" "))}</small></p>` : ""}
@@ -309,7 +307,13 @@ export function createEncounterService(ctx) {
         <p>${ctx.escapeHtml(safety
     ? ctx.localize("scbr.encounter.confirm.safety", "The current state is saved first, so you can undo the reset.")
     : ctx.localize("scbr.encounter.confirm.noSafety", "The automatic copy before a reset is turned off in the module settings."))}</p>
-        <p><small>${ctx.escapeHtml(ctx.localize("scbr.encounter.confirm.scope", "Only the scene, the combat and the characters of this snapshot are touched."))}</small></p>`,
+        <p><small>${ctx.escapeHtml(ctx.localize("scbr.encounter.confirm.scope", "Only the scene, the combat and the characters of this snapshot are touched."))}</small></p>`;
+  }
+
+  async function confirmRestore(meta, summary, { safety }) {
+    return foundry.applications.api.DialogV2.confirm({
+      window: { title: ctx.localize("scbr.encounter.confirm.title", "Reset the encounter") },
+      content: confirmContent(meta, summary, { safety }),
       yes: { label: ctx.localize("scbr.encounter.confirm.yes", "Reset") },
       no: { label: ctx.localize("scbr.action.cancel", "Cancel") },
       rejectClose: false,
@@ -381,6 +385,6 @@ export function createEncounterService(ctx) {
   return {
     captureState, readLiveState, saveSnapshot, saveCurrent, loadSnapshot, deleteSnapshot, restoreSnapshot, onCombatStart,
     listSnapshots: readIndex, latestForCombat: (combatId) => latestForCombat(readIndex(), combatId),
-    planFor, applyPlan, describeSummary, describeState, snapshotTitle, keepCount
+    planFor, applyPlan, describeSummary, describeState, snapshotTitle, keepCount, confirmContent
   };
 }
